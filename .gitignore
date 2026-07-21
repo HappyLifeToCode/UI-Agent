@@ -1,0 +1,46 @@
+# 数据产出目录（结构保留，内容不提交）
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# 环境与密钥
+.env
+*.key
+*.pem
+credentials.json
+secrets/
+
+# 临时文件
+*.log
+*.tmp
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 浏览器产物
+trace.zip
+screenshots/
+_browser_artifacts/
+
+# Agent 会话（敏感轨迹）
+.kimi-code/sessions/
+.claude/projects/
