@@ -25,6 +25,8 @@
 4. 用 browser_take_screenshot 对作者主页整页截图：
    - fullPage 参数设为 true
    - filename 设为 {{TASK_ID}}_profile.png
+   - 截图文件由外层执行器统一归档到 data/{{TASK_ID}}/screenshots/，
+     你【不要】用 cp/mv 等命令手动移动截图文件。
 
 5. 用 Write 工具把抽取结果写入文件 ./data/{{TASK_ID}}/result.json（目录不存在会自动创建），格式如下：
 
@@ -54,6 +56,7 @@
 
 # 完成标准
 
-任务完成时，./data/{{TASK_ID}}/ 目录下应有：
-- result.json（本次抽取结果）
-- 一张整页截图（通过浏览器工具生成）
+任务完成时：
+- ./data/{{TASK_ID}}/result.json 已写入（本次抽取结果）
+- 已通过 browser_take_screenshot 生成一张整页截图（filename 为 {{TASK_ID}}_profile.png，
+  归档到 screenshots/ 由执行器完成，无需你处理）
