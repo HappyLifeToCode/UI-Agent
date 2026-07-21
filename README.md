@@ -18,7 +18,7 @@ qa/             质检工具与审查系统
 
 ## 技术栈
 
-- **Agent 框架**：Claude Code、Kimi Code
+- **Agent 框架**：Kimi Code
 - **浏览器自动化**：Playwright（通过 playwright-mcp）
 - **协议**：MCP（Model Context Protocol）
 - **训练数据格式**：OpenAI messages 格式（JSONL）
