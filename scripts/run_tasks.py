@@ -16,7 +16,8 @@
 
 产出（每条任务，data/<task_id>/ 标准目录，严格 5 项）：
     task.json                     任务定义副本（执行器写入）
-    result.json                   Agent 抽取的结果（由 Agent 写入）
+    result.json                   Agent 抽取的结果（Agent 写入；执行器跑完后
+                                  补写 _run 执行元信息，见 [M5] annotate_run_info）
     wire.jsonl                    会话完整轨迹（从 Kimi 会话目录复制）
     trace.zip                     Playwright 浏览器侧轨迹（MCP --save-trace 产出）
     screenshots/<task_id>_profile.png  整页截图（执行器从 MCP 输出目录归档）
@@ -39,7 +40,8 @@
     [M4] 产物收集 .............. collect_trajectory（wire.jsonl）/
                                  snapshot_mcp_output / _pack_trace_zip /
                                  collect_browser_artifacts（trace.zip + 截图）
-    [M5] 清理与状态判定 ........ clean_task_outputs / read_status
+    [M5] 清理与状态判定 ........ clean_task_outputs / read_status /
+                                 annotate_run_info（跑完补写 result.json 的 _run）
     [M6] 映射表记录 ............ build_record / append_mapping（mapping.jsonl schema）
     [M7] 并发锁 ................ acquire_lock / release_lock
     [M8] 单任务执行主流程 ...... run_one_task（串联 M2-M7）
@@ -311,6 +313,37 @@ def read_status(task_dir: Path) -> str:
         return "invalid_result"
 
 
+def annotate_run_info(task_dir: Path, session_id, start_time, end_time):
+    """任务跑完后把执行元信息补写进 result.json 的 _run 字段。
+
+    必须由执行器（而非 Agent）写入：Agent 不知道自己的 session_id，
+    在 prompt 里要这个值只会得到编造值。steps 取 wire.jsonl 中
+    step.begin 事件计数；result.json 缺失或损坏时静默跳过（状态由
+    read_status 另行判定）。
+    """
+    rj = task_dir / "result.json"
+    if not rj.exists():
+        return
+    try:
+        data = json.loads(rj.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    steps = 0
+    wire = task_dir / "wire.jsonl"
+    if wire.exists():
+        steps = sum(1 for line in wire.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if '"step.begin"' in line)
+    data["_run"] = {
+        "session_id": session_id,
+        "framework": FRAMEWORK,
+        "model": MODEL,
+        "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%SZ") if start_time else None,
+        "end_time": end_time.strftime("%Y-%m-%dT%H:%M:%SZ") if end_time else None,
+        "steps": steps,
+    }
+    rj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 # =============================================================================
 # [M6] 映射表记录：mapping.jsonl 的统一 schema
 #   - 下游（谭的转换管线、审查系统任务列表页）按此 schema 读取
@@ -446,6 +479,10 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
     # 8. 读取任务状态 [M5]
     status = read_status(task_dir)
 
+    # 8.5 补写 _run 执行元信息 [M5]：执行器职责，不写进 prompt 让 Agent 填
+    #     （Agent 不知道自己的 session_id，只会编造）
+    annotate_run_info(task_dir, session_id, start_time, end_time)
+
     # 9. 构造执行记录 [M6]（统一 schema）
     record = build_record(
         task=task,
@@ -477,7 +514,9 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
 
 # =============================================================================
 # [M9] 批量主循环与 CLI
-#   - 反爬参数（任务间延迟 30-90s、CAPTCHA 后 120-300s、重试次数）在此调
+#   - 反爬参数（任务间延迟 30-90s、CAPTCHA 冷却 30-45 分钟、重试次数）在此调
+#   - 熔断：连续 --max-consecutive-captcha 个任务 CAPTCHA 未解除即终止批次，
+#     防止 IP 被标记后继续硬跑（谷歌日均可遇上亿爬虫，硬冲没有胜算）
 #   - 并发锁 [M7] 只罩真实执行，--dry-run 不需要锁
 # =============================================================================
 
@@ -488,6 +527,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只打印命令不执行")
     parser.add_argument("--no-delay", action="store_true", help="禁用反爬延迟（测试用）")
     parser.add_argument("--max-captcha-retry", type=int, default=2, help="CAPTCHA 最大重试次数")
+    parser.add_argument("--max-consecutive-captcha", type=int, default=2,
+                        help="连续 N 个任务 CAPTCHA 未解除则熔断终止批次（默认 2）")
     args = parser.parse_args()
 
     # 加载任务列表
@@ -525,6 +566,7 @@ def main():
         success_count = 0
         captcha_count = 0
         failed_count = 0
+        consecutive_captcha = 0  # 连续 CAPTCHA 未解除计数（熔断用）
 
         for i, task in enumerate(tasks_to_run):
             # 执行任务 [M8]
@@ -533,14 +575,16 @@ def main():
             # 统计结果
             if record["status"] == "success":
                 success_count += 1
+                consecutive_captcha = 0
             elif record["status"] == "captcha":
                 captcha_count += 1
-                # CAPTCHA 重试逻辑
+                # CAPTCHA 重试逻辑：冷却 30 分钟以上再试。
+                # 触发后几分钟内硬冲只会加重封禁（task_0007/0008 三次连灭的教训）。
                 retry = 0
                 while retry < args.max_captcha_retry:
                     retry += 1
-                    delay = random.uniform(120, 300)  # CAPTCHA 后等 2-5 分钟
-                    print(f"[CAPTCHA] 检测到验证码，{delay:.0f}秒后重试 ({retry}/{args.max_captcha_retry})...")
+                    delay = random.uniform(1800, 2700)  # CAPTCHA 后冷却 30-45 分钟
+                    print(f"[CAPTCHA] 检测到验证码，冷却 {delay/60:.0f} 分钟后重试 ({retry}/{args.max_captcha_retry})...")
                     time.sleep(delay)
 
                     record = run_one_task(task)
@@ -549,10 +593,21 @@ def main():
 
                 if record["status"] == "success":
                     success_count += 1
+                    consecutive_captcha = 0
                 else:
                     failed_count += 1
+                    consecutive_captcha += 1
             else:
                 failed_count += 1
+                consecutive_captcha = 0
+
+            # 熔断：连续 N 个任务重试后仍 CAPTCHA，说明 IP 已被谷歌标记，
+            # 继续跑只会加重封禁且全是废数据，直接终止本批次。
+            if consecutive_captcha >= args.max_consecutive_captcha:
+                print(f"[熔断] 连续 {consecutive_captcha} 个任务 CAPTCHA 未解除，"
+                      f"IP 可能已被谷歌标记，终止本批次（剩余 {len(tasks_to_run) - i - 1} 条）。")
+                print(f"       建议冷却数小时后用 --start-from {task['task_id']} 续跑。")
+                break
 
             # 反爬延迟：任务间随机等待
             if not args.no_delay and i < len(tasks_to_run) - 1:
