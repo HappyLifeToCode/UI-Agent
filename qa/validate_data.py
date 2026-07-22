@@ -60,6 +60,11 @@ def validate_task(task_dir: Path) -> dict:
 
             # 检查状态
             status = result_data.get("status")
+
+            # _run 执行元信息（由执行器跑完后补写，非 Agent 职责；早期数据可能没有）
+            if "_run" not in result_data:
+                warnings.append("缺少 _run 执行元信息（应由执行器跑完后补写）")
+
             if status == "success":
                 # 成功状态下，检查数据完整性
                 if "total_citations" not in result_data:
@@ -118,6 +123,9 @@ def validate_task(task_dir: Path) -> dict:
             warnings.append(f"截图文件过小: {size_kb:.1f} KB（可能截图失败）")
         elif size_kb > 5000:
             warnings.append(f"截图文件过大: {size_kb:.1f} KB")
+        # captcha 状态下的截图大概率是验证页而非作者主页，标人工复核
+        if result_data and result_data.get("status") == "captcha":
+            warnings.append("status=captcha 但存在截图（可能是验证页截图），需人工复核")
 
     # 5. 验证 trace.zip（完整性 + 关键条目）
     trace_zip = task_dir / "trace.zip"
