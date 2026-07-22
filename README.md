@@ -4,7 +4,7 @@
 
 ## 项目目标
 
-让 LLM Agent（Claude Code / Kimi Code）通过 MCP 协议操控浏览器，完成"谷歌学术搜人 → 进作者主页 → 抽取信息 → 整页截图"任务，完整记录 Agent 执行轨迹，供后续转换为训练数据。
+让 LLM Agent（Kimi Code）通过 MCP 协议操控浏览器，完成"谷歌学术搜人 → 进作者主页 → 抽取信息 → 整页截图"任务，完整记录 Agent 执行轨迹，供后续转换为训练数据。
 
 ## 目录结构
 
@@ -26,7 +26,7 @@ logs/           执行日志（非交付物，不进 Git）
 
 ## 快速开始
 
-### 第 0 步：环境搭建（只做一次）
+### 第 0 步：环境搭建
 
 **先读 [docs/QA1.md](docs/QA1.md)** —— 里面有关键的版本注意事项
 （playwright-mcp 必须锁定 0.0.64，`@latest` 拿不到 trace.zip），配错会导致产出不符合契约。
@@ -99,7 +99,6 @@ python qa/validate_data.py --task-id task_0003     # 只查某条
 
 ### 第 5 步：交付下游
 
-- `data/task_*/` 整批 + `data/mapping.jsonl`（任务↔会话台账）交给数据管线同学；
 - 下游转换前必读 **[docs/FORMAT.md](docs/FORMAT.md)**——逐字段的格式契约
   （目录结构、result.json / wire.jsonl / mapping.jsonl / trace.zip 定义、
   断档红线、mapping 读取规则）。
