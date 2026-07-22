@@ -127,6 +127,7 @@ Kimi Code 会话的原始 wire 文件原样复制，一行一个 JSON 事件。
   "duration_seconds": 155.12,
   "returncode": 0,
   "status": "success",
+  "failure_reason": null,
   "has_result": true,
   "has_screenshot": true,
   "has_trace": true,
@@ -147,7 +148,9 @@ Kimi Code 会话的原始 wire 文件原样复制，一行一个 JSON 事件。
 - 刻意不含 `session_path`（本机用户名隐私）；需要回查原始会话时，
   用 `session_id` 在本机 `~/.kimi-code/sessions/wd_*/<session_id>/` 定位。
 - `status` 另有 `captcha` / `not_found` / `no_result` / `invalid_result`，
-  均不应进入训练集。
+  均不应进入训练集；此时 `failure_reason` 给出单行失败原因（优先取
+  result.json 的 `note`，其次按 returncode/status 推导），success 时为 null，
+  失败统计读这一列即可，不必回查 result.json。
 
 ## 6. trace.zip（浏览器侧轨迹）
 
