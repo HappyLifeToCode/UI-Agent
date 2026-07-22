@@ -344,6 +344,33 @@ def annotate_run_info(task_dir: Path, session_id, start_time, end_time):
     rj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def derive_failure_reason(task_dir: Path, status: str, returncode: int):
+    """生成 mapping 用的单行失败原因；status 为 success 时返回 None。
+
+    优先取 Agent 写在 result.json 里的 note（captcha/not_found 的场景说明），
+    其次按 returncode / status 给出 runner 侧判断。
+    """
+    if status == "success":
+        return None
+    rj = task_dir / "result.json"
+    if rj.exists():
+        try:
+            note = json.loads(rj.read_text(encoding="utf-8")).get("note")
+            if note:
+                return note
+        except json.JSONDecodeError:
+            pass
+    if returncode == -1:
+        return "任务超时（10 分钟）"
+    if returncode == -2:
+        return "CLI 执行异常"
+    if status == "no_result":
+        return "Agent 未写入 result.json"
+    if status == "invalid_result":
+        return "result.json 不是合法 JSON"
+    return status  # captcha / not_found 等但 Agent 没写 note
+
+
 # =============================================================================
 # [M6] 映射表记录：mapping.jsonl 的统一 schema
 #   - 下游（谭的转换管线、审查系统任务列表页）按此 schema 读取
@@ -352,10 +379,11 @@ def annotate_run_info(task_dir: Path, session_id, start_time, end_time):
 
 def build_record(task: dict, session_id, start_time, end_time,
                  returncode, status, has_result, has_screenshot, has_trace,
-                 trajectory_collected) -> dict:
+                 trajectory_collected, failure_reason=None) -> dict:
     """构造统一 schema 的执行记录（写入 mapping.jsonl）。
 
     注意：不记录 session_path（含本机用户名等隐私路径），只留 session_id。
+    failure_reason 仅 status 非 success 时有值，供下游单行读出失败原因。
     """
     return {
         "task_id": task["task_id"],
@@ -368,6 +396,7 @@ def build_record(task: dict, session_id, start_time, end_time,
         "duration_seconds": round((end_time - start_time).total_seconds(), 2) if start_time and end_time else None,
         "returncode": returncode,
         "status": status,
+        "failure_reason": failure_reason,
         "has_result": has_result,
         "has_screenshot": has_screenshot,
         "has_trace": has_trace,
@@ -483,7 +512,7 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
     #     （Agent 不知道自己的 session_id，只会编造）
     annotate_run_info(task_dir, session_id, start_time, end_time)
 
-    # 9. 构造执行记录 [M6]（统一 schema）
+    # 9. 构造执行记录 [M6]（统一 schema，含单行失败原因）
     record = build_record(
         task=task,
         session_id=session_id,
@@ -495,6 +524,7 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
         has_screenshot=has_screenshot,
         has_trace=has_trace,
         trajectory_collected=trajectory_collected,
+        failure_reason=derive_failure_reason(task_dir, status, returncode),
     )
 
     # 10. 追加写入 mapping.jsonl [M6]
