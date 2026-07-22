@@ -56,13 +56,26 @@ Agent 从作者主页抽取的结构化结果：
     {"title": "Visualizing data using t-SNE", "year": "2008", "citations": 70111}
   ],
   "profile_url": "https://scholar.google.com/citations?user=JicYPdAAAAAJ",
-  "status": "success"
+  "status": "success",
+  "_run": {
+    "session_id": "session_96e709e0-6c37-4a0d-9200-279fec5cb54d",
+    "framework": "kimi-code",
+    "model": "kimi-for-coding/k3",
+    "start_time": "2026-07-21T14:23:32Z",
+    "end_time": "2026-07-21T14:26:08Z",
+    "steps": 9
+  }
 }
 ```
 
 字段规则：
 - `status` ∈ `success` / `captcha` / `not_found`。非 success 时其余字段尽力填写，
   可能缺省或为空，并附带 `note` 字段说明情况。
+- `_run`：执行元信息，**由执行器在跑完后补写，不在 Agent 的 prompt 要求内**
+  （Agent 不知道自己的 session_id，让它写只会得到编造值）。字段：
+  `session_id`、`framework`、`model`、`start_time` / `end_time`（UTC，
+  `YYYY-MM-DDTHH:MM:SSZ`）、`steps`（wire.jsonl 中 `step.begin` 计数）。
+  有此字段后任务目录自包含，排查时不必回查 mapping.jsonl。
 - `total_citations` / `h_index` / `i10_index` / `citations`：**纯整数**
   （无逗号、无单位、非字符串），均取谷歌学术 "All" 列。
 - `year`：**字符串**。
@@ -125,6 +138,9 @@ Kimi Code 会话的原始 wire 文件原样复制，一行一个 JSON 事件。
 读取规则：
 - 同一 `task_id` 可能有多条（CAPTCHA 重试、补跑），**按时间取最后一条
   `status=success` 且 `has_*` 全 true 的**作为有效样本来源，其余为执行历史。
+- 带 `"deprecated": true` 的行是废弃记录（早期 schema 混乱、秒挂误标
+  success、session 归属错乱等），**一律跳过不参与任何统计与取样**；
+  废弃原因见该行的 `deprecated_reason` 字段。
 - 训练样本 meta 所需字段直接取自这里：`task_id`、`session_id`、
   `agent`（=`framework`）、`source`（= `data/<task_id>/wire.jsonl`）、
   `sample_index`（转换时按有效记录顺序编号）。
@@ -154,5 +170,6 @@ trace.zip
 python qa/validate_data.py      # 全部通过 exit 0；任一任务有 issue exit 1
 ```
 
-检查项：5 项产物齐全、result.json 字段与整数类型、wire.jsonl 行数与
-tool_call 数下限、**断档配对检测**（§4）、截图大小、trace.zip 完整性。
+检查项：5 项产物齐全、result.json 字段与整数类型、`_run` 元信息是否存在
+（缺失仅警告）、wire.jsonl 行数与 tool_call 数下限、**断档配对检测**（§4）、
+截图大小、captcha 状态带截图的人工复核提示、trace.zip 完整性。
