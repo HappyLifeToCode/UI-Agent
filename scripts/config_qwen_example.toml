@@ -1,0 +1,26 @@
+# Kimi Code 多模型配置参考 — Qwen3.5-27B via SiliconFlow
+# ============================================================
+# 使用方法：将下面两个 [providers] 和 [models] 段落追加到
+# ~/.kimi-code/config.toml 末尾（不要覆盖已有的 Kimi 配置），
+# 然后修改文件第一行 default_model 即可切换。
+#
+# 切换为 Qwen：
+#   default_model = "qwen-maas/Qwen/Qwen3.5-27B"
+#
+# 切回 Kimi K3：
+#   default_model = "kimi-for-coding/k3"
+#
+# 改完重启 Kimi Code 生效。
+
+[providers.qwen-maas]
+type = "openai"
+api_key = "你的硅基流动 API Key"
+base_url = "https://api.siliconflow.cn/v1"
+
+[models."qwen-maas/Qwen/Qwen3.5-27B"]
+provider = "qwen-maas"
+model = "Qwen/Qwen3.5-27B"
+max_context_size = 131072
+max_output_size = 8192
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "Qwen3.5 27B"
