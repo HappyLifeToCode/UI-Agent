@@ -10,7 +10,8 @@
 
 ```
 tasks/          任务清单（tasks.jsonl）
-scripts/        执行脚本（run_tasks.py 批量执行器、prompt 模板）
+scripts/        执行脚本（run_tasks.py 批量执行器、prompt 模板、
+                playwright_mcp_config.json / stealth_init.js 反检测配置）
 data/           产出数据（不进 Git，仅保留结构）
 docs/           文档（QA1.md 环境搭建 / log1.md 操作手册 / FORMAT.md 格式契约）
 qa/             质检工具（validate_data.py）

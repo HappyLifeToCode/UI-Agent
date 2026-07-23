@@ -81,6 +81,12 @@ SESSIONS_ROOT = Path.home() / ".kimi-code" / "sessions"
 # playwright-mcp 的输出目录（与 ~/.kimi-code/mcp.json 的 --output-dir 一致）
 MCP_OUTPUT_DIR = PROJECT_ROOT / ".playwright-mcp"
 
+# 反检测配置：MCP 启动时应通过 --config / --init-script 加载这两个文件
+# （见 docs/QA1.md「反检测配置」节；check_mcp_config 在跑批前自检是否就位）
+MCP_CONFIG_PATH = Path.home() / ".kimi-code" / "mcp.json"
+MCP_STEALTH_CONFIG = PROJECT_ROOT / "scripts" / "playwright_mcp_config.json"
+STEALTH_INIT_SCRIPT = PROJECT_ROOT / "scripts" / "stealth_init.js"
+
 # Kimi CLI 路径检测
 KIMI_BIN = Path.home() / ".kimi-code" / "bin" / "kimi.exe"
 if not KIMI_BIN.exists():
@@ -545,10 +551,48 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
 # =============================================================================
 # [M9] 批量主循环与 CLI
 #   - 反爬参数（任务间延迟 30-90s、CAPTCHA 冷却 30-45 分钟、重试次数）在此调
+#   - check_mcp_config：跑批前自检 MCP 反检测配置（--config/--init-script）
 #   - 熔断：连续 --max-consecutive-captcha 个任务 CAPTCHA 未解除即终止批次，
 #     防止 IP 被标记后继续硬跑（谷歌日均可遇上亿爬虫，硬冲没有胜算）
 #   - 并发锁 [M7] 只罩真实执行，--dry-run 不需要锁
 # =============================================================================
+
+def check_mcp_config():
+    """跑批前自检 ~/.kimi-code/mcp.json 的反检测配置是否就位。
+
+    只警告不阻断：配置漂移是已被实测过的故障模式（缺 --save-trace 导致
+    整批没有 trace.zip；task_0001 会话没加载到 MCP 工具），但测试性
+    运行不应被自检卡死。
+    """
+    problems = []
+    if not MCP_CONFIG_PATH.exists():
+        problems.append(f"找不到 MCP 配置文件: {MCP_CONFIG_PATH}")
+    else:
+        try:
+            args = (json.loads(MCP_CONFIG_PATH.read_text(encoding="utf-8"))
+                    .get("mcpServers", {}).get("playwright", {}).get("args", []))
+        except json.JSONDecodeError as e:
+            problems.append(f"MCP 配置文件不是合法 JSON: {e}")
+            args = []
+        joined = " ".join(str(a) for a in args)
+        for flag in ("--save-trace", "--headless", "--config", "--init-script"):
+            if flag not in joined:
+                problems.append(f"mcp.json 缺少 {flag} 参数")
+        if "--config" in joined and str(MCP_STEALTH_CONFIG).replace("\\", "/") not in joined.replace("\\", "/"):
+            problems.append(f"--config 未指向 {MCP_STEALTH_CONFIG}")
+        if "--init-script" in joined and str(STEALTH_INIT_SCRIPT).replace("\\", "/") not in joined.replace("\\", "/"):
+            problems.append(f"--init-script 未指向 {STEALTH_INIT_SCRIPT}")
+    for f in (MCP_STEALTH_CONFIG, STEALTH_INIT_SCRIPT):
+        if not f.exists():
+            problems.append(f"反检测文件缺失: {f}")
+    if problems:
+        print("[警告] MCP 反检测配置自检未通过，谷歌学术拦截率会显著升高：")
+        for p in problems:
+            print(f"       - {p}")
+        print("       按 docs/QA1.md「反检测配置」节修正 mcp.json 并重启会话后再跑。")
+    else:
+        print("[自检] MCP 反检测配置就位（--config / --init-script / --save-trace）")
+
 
 def main():
     parser = argparse.ArgumentParser(description="批量执行谷歌学术人物检索任务")
@@ -579,6 +623,7 @@ def main():
 
     print(f"[启动] 共 {len(tasks_to_run)} 条任务待执行")
     print(f"[配置] 框架={FRAMEWORK} | 模型={MODEL} | 反爬延迟={'关闭' if args.no_delay else '开启'}")
+    check_mcp_config()  # [M9] 跑批前自检反检测配置（只警告不阻断）
 
     if args.dry_run:
         for task in tasks_to_run:
