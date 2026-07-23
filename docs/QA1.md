@@ -16,13 +16,38 @@
       "command": "cmd",
       "args": ["/c", "npx", "-y","@playwright/mcp@0.0.64",
                "--headless", "--save-trace",
-               "--output-dir", "D:/Scholar/.playwright-mcp"] -> 这里要根据自己的调整，可以问llm
+               "--output-dir", "D:/Scholar/.playwright-mcp",
+               "--config", "D:/Scholar/scripts/playwright_mcp_config.json",
+               "--init-script", "D:/Scholar/scripts/stealth_init.js"] -> 路径要根据自己的项目调整
     }
   }
 }
 ```
 
 改完配置后需要重启 Kimi Code 会话才生效（MCP server 随会话启动）。
+
+### 反检测配置（反爬三件套在 MCP 侧的落地）
+
+浏览器由 playwright-mcp（Node 进程）启动，执行器碰不到浏览器实例，
+所以反检测必须打在 MCP 启动参数上（已实测 0.0.64 支持以下两个参数）：
+
+- **`--config scripts/playwright_mcp_config.json`**：浏览器启动与上下文配置——
+  `launchOptions.args` 含 `--disable-blink-features=AutomationControlled`
+  （禁用 Blink 自动化特征）、`--no-sandbox`、`--disable-setuid-sandbox`；
+  `contextOptions` 固定 UA（Chrome/124, Windows）、视口 1280x800、
+  locale `en-US`、时区 `America/New_York`（与 VPN 出口一致，不一致反而是信号）。
+- **`--init-script scripts/stealth_init.js`**：每页面前置注入，抹除高维指纹——
+  `navigator.webdriver`、plugins、languages、hardwareConcurrency/deviceMemory、
+  WebGL 渲染器（headless 默认报 SwiftShader，是强 headless 信号）、
+  permissions.query 的 notifications 分支。
+  注：Python 的 playwright-stealth 库用不上（浏览器在 Node 侧），
+  这个脚本是它在 MCP 链路上的等价实现。
+- **行为拟人化**在 `scripts/task_prompt_template.md`「行为拟人化」节：
+  强制 Agent 跳转/点击前 `browser_wait_for` 2~5 秒、滚动页面、悬停后点击；
+  任务间 30-90 秒随机延迟由执行器控制（[M9]）。
+
+`run_tasks.py` 跑批前会自动自检上述配置（`check_mcp_config`，只警告不阻断）。
+UA 有改动时必须同步改 stealth_init.js 里的 WebGL/平台指纹，保持自洽。
 
 ## 版本注意事项（重要）
 
