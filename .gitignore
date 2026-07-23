@@ -23,6 +23,7 @@ secrets/
 *.tmp
 *.swp
 *~
+reject_report.json
 # IDE
 .vscode/
 .idea/

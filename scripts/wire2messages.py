@@ -144,7 +144,26 @@ def get_run_info(task_dir, task_id):
 
 
 if __name__ == "__main__":
-    sample = convert(sys.argv[1])
-    out = Path(sys.argv[1]) / "sample.json"
-    out.write_text(json.dumps(sample, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"生成 {out}:共 {len(sample['messages'])} 条消息")
+    root = Path(sys.argv[1])
+    if (root / "wire.jsonl").exists():
+        # 单任务模式:python scripts/wire2messages.py data/task_0001
+        sample = convert(root)
+        out = root / "sample.json"
+        out.write_text(json.dumps(sample, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"生成 {out}:共 {len(sample['messages'])} 条消息")
+    else:
+        # 批量模式:python scripts/wire2messages.py data/
+        samples = []
+        for task_dir in sorted(root.iterdir()):
+            if task_dir.is_dir() and (task_dir / "wire.jsonl").exists():
+                try:
+                    s = convert(task_dir)
+                    samples.append(s)
+                    print(f"✅ {task_dir.name}: {len(s['messages'])} 条消息")
+                except Exception as e:
+                    print(f"❌ {task_dir.name}: {e}")
+        out = root / "train.jsonl"
+        with open(out, "w", encoding="utf-8") as f:
+            for s in samples:
+                f.write(json.dumps(s, ensure_ascii=False) + "\n")
+        print(f"\n共 {len(samples)} 条样本 → {out}")
