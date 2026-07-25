@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 import re
+
+
 def sanitize(text):
     """脱敏:本机用户路径 → <HOME>(契约 §1)"""
     if not isinstance(text, str):
@@ -14,6 +16,8 @@ def sanitize(text):
     # Linux / Mac
     text = re.sub(r"/(?:Users|home)/[^/\s\"']+", "<HOME>", text)
     return text
+
+
 def sanitize_obj(obj):
     """递归脱敏:把对象里所有字符串都过一遍(防漏)"""
     if isinstance(obj, str):
@@ -23,6 +27,7 @@ def sanitize_obj(obj):
     if isinstance(obj, dict):
         return {k: sanitize_obj(v) for k, v in obj.items()}
     return obj
+
 
 def load_events(wire_path):
     """① 解析:逐行读取事件"""
@@ -126,6 +131,7 @@ def convert(task_dir):
     messages = sanitize_obj(messages)
     # meta:新批次的 result.json 里有 _run;旧的没有,会是 None(正常现象)
     result, run, run_source = get_run_info(task_dir, task_id)
+    alignment = check_alignment(events, messages)
     meta = {
         "task_id": task_id,
         "session_id": run.get("session_id"),
@@ -135,8 +141,10 @@ def convert(task_dir):
         "sample_index": 0,
         "status": result.get("status"),
         "run_info_from": run_source,  # 记录执行信息来源,便于追溯
+        **alignment,
     }
     return {"messages": messages, "meta": meta}
+
 
 def get_run_info(task_dir, task_id):
     """执行信息:优先 result.json 的 _run,缺失时回查 mapping.jsonl"""
@@ -155,11 +163,26 @@ def get_run_info(task_dir, task_id):
             if (row.get("task_id") == task_id
                     and row.get("status") == "success"
                     and not row.get("deprecated")):
-                row_time = row.get("start_time") or ""        # None → ""
+                row_time = row.get("start_time") or ""  # None → ""
                 latest_time = (latest.get("start_time") or "") if latest else ""
                 if latest is None or row_time > latest_time:
                     latest = row
     return result, (latest or {}), "mapping.jsonl" if latest else None
+
+
+def check_alignment(events, messages):
+    """断档对齐:llm.request 数 vs 重组 assistant 消息数(契约 §4)"""
+    n_request = sum(1 for ev in events if ev["type"] == "llm.request")
+    n_assistant = sum(1 for m in messages if m["role"] == "assistant")
+    result = {
+        "llm_request_count": n_request,
+        "assistant_msg_count": n_assistant,
+        "aligned": n_request == n_assistant,
+    }
+    if not result["aligned"]:
+        result["drop_reason"] = (f"轨迹断档:llm.request={n_request} 次,"
+                                 f"重放 assistant={n_assistant} 条")
+    return result
 
 
 if __name__ == "__main__":
@@ -172,17 +195,25 @@ if __name__ == "__main__":
         print(f"生成 {out}:共 {len(sample['messages'])} 条消息")
     else:
         # 批量模式:python scripts/wire2messages.py data/
-        samples = []
+        samples, dropped = [], []
         for task_dir in sorted(root.iterdir()):
             if task_dir.is_dir() and (task_dir / "wire.jsonl").exists():
                 try:
                     s = convert(task_dir)
-                    samples.append(s)
-                    print(f"✅ {task_dir.name}: {len(s['messages'])} 条消息")
+                    if s["meta"]["aligned"]:
+                        samples.append(s)
+                        print(f"✅ {task_dir.name}: {len(s['messages'])} 条消息")
+                    else:
+                        dropped.append(s)
+                        print(f"⚠️ {task_dir.name}: 已剔除({s['meta']['drop_reason']})")
                 except Exception as e:
                     print(f"❌ {task_dir.name}: {e}")
         out = root / "train.jsonl"
         with open(out, "w", encoding="utf-8") as f:
             for s in samples:
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
-        print(f"\n共 {len(samples)} 条样本 → {out}")
+        if dropped:  # 断档样本单独留档,不静默丢弃(质量红线)
+            with open(root / "dropped.jsonl", "w", encoding="utf-8") as f:
+                for s in dropped:
+                    f.write(json.dumps(s, ensure_ascii=False) + "\n")
+        print(f"\n入库 {len(samples)} 条 → {out};剔除 {len(dropped)} 条(见 dropped.jsonl)")

@@ -5,20 +5,28 @@
 """
 from dataclasses import dataclass
 import re
+
+
 @dataclass
 class Issue:
-    rule: str      # 规则名,如 "tool_pairing"
-    level: str     # "error" | "warning"
+    rule: str  # 规则名,如 "tool_pairing"
+    level: str  # "error" | "warning"
     location: str  # 位置,如 "messages[5]"
-    message: str   # 人话描述,写清为什么不合格
+    message: str  # 人话描述,写清为什么不合格
+
+
 REQUIRED_META = ["task_id", "session_id", "agent", "source", "sample_index"]
 VALID_ROLES = {"system", "user", "assistant", "tool"}
+
+
 def check_meta(meta, issues):
     """规则1:meta 必填字段完整"""
     for key in REQUIRED_META:
         if key not in meta or meta[key] is None:
             issues.append(Issue("meta_required", "error", "meta",
                                 f"缺少必填字段 meta.{key}"))
+
+
 def check_roles(messages, issues):
     """规则2:角色合法、序列合理"""
     if not messages:
@@ -34,6 +42,8 @@ def check_roles(messages, issues):
         if msg.get("role") not in VALID_ROLES:
             issues.append(Issue("role_valid", "error", f"messages[{i}]",
                                 f"非法 role: {msg.get('role')}"))
+
+
 def check_tool_pairing(messages, issues):
     """规则3(核心):tool_call 与 tool 消息配对且相邻"""
     seen_ids = set()
@@ -73,10 +83,14 @@ def check_tool_pairing(messages, issues):
             i += 1
         else:
             i += 1
+
+
 SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9]{20,}"), "疑似 API key"),
     (re.compile(r"Bearer\s+[A-Za-z0-9._-]{20,}"), "疑似 Bearer token"),
 ]
+
+
 def check_secrets(messages, issues):
     """规则4:脱敏复检,样本里不允许出现密钥"""
     for i, msg in enumerate(messages):
@@ -86,6 +100,8 @@ def check_secrets(messages, issues):
                 if pat.search(content):
                     issues.append(Issue("secret_leak", "error", f"messages[{i}]",
                                         f"{desc},需脱敏后重新入库"))
+
+
 def validate_sample(sample: dict) -> list:
     """主入口:校验一条样本,返回 Issue 列表(空 = 通过)"""
     issues = []

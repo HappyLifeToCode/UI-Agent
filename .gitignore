@@ -24,6 +24,7 @@ secrets/
 *.swp
 *~
 reject_report.json
+dropped.jsonl
 # IDE
 .vscode/
 .idea/
