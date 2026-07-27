@@ -13,6 +13,7 @@
     python scripts/run_tasks.py --limit 3                # 只跑前 3 条
     python scripts/run_tasks.py --start-from task_0003   # 从某条开始（含）
     python scripts/run_tasks.py --dry-run                # 只打印将执行的命令，不真跑
+    python scripts/run_tasks.py --model kimi-for-coding/k1  # 指定模型
 
 产出（每条任务，data/<task_id>/ 标准目录，严格 5 项）：
     task.json                     任务定义副本（执行器写入）
@@ -94,7 +95,7 @@ if not KIMI_BIN.exists():
     KIMI_BIN = "kimi"
 
 FRAMEWORK = "kimi-code"
-MODEL = "kimi-for-coding/k3"
+MODEL = os.environ.get("AGENT_MODEL", "kimi-for-coding/k3")  # 可通过环境变量或 CLI 参数覆盖
 
 
 # =============================================================================
@@ -603,7 +604,13 @@ def main():
     parser.add_argument("--max-captcha-retry", type=int, default=2, help="CAPTCHA 最大重试次数")
     parser.add_argument("--max-consecutive-captcha", type=int, default=2,
                         help="连续 N 个任务 CAPTCHA 未解除则熔断终止批次（默认 2）")
+    parser.add_argument("--model", help="指定模型（覆盖环境变量 AGENT_MODEL 和默认值）")
     args = parser.parse_args()
+
+    # 应用命令行参数中的模型设置
+    global MODEL
+    if args.model:
+        MODEL = args.model
 
     # 加载任务列表
     tasks_path = PROJECT_ROOT / "tasks" / "tasks.jsonl"

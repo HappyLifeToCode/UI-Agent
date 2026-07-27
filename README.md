@@ -85,7 +85,12 @@ python scripts/run_tasks.py --start-from task_0003   # 从某条开始补跑
 python scripts/run_tasks.py --limit 3                # 只跑前 3 条
 python scripts/run_tasks.py --dry-run                # 只打印计划，不真跑
 python scripts/run_tasks.py --no-delay               # 关闭反爬延迟（仅测试）
+python scripts/run_tasks.py --model kimi-for-coding/k1  # 指定模型（默认 k3）
 ```
+
+**模型配置**：默认使用 `kimi-for-coding/k3`，可通过以下方式指定其他模型：
+- 命令行参数：`--model <模型名>`（优先级最高）
+- 环境变量：`set AGENT_MODEL=<模型名>`（Windows）或 `export AGENT_MODEL=<模型名>`（Linux/Mac）
 
 ### 第 4 步：质检
 
