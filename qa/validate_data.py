@@ -28,14 +28,14 @@ def validate_task(task_dir: Path) -> dict:
     issues = []
     warnings = []
 
-    # 1. 检查必需文件（契约：data/<task_id>/ 严格 5 项）
-    png_rel = f"screenshots/{task_id}_profile.png"
+    # 1. 检查必需文件（契约：data/<task_id>/ 严格 5 项；
+    #    screenshots/ 内应有每篇 recent_papers 一张 <task_id>_paper_NN.png）
     required_files = {
         "task.json": False,
         "result.json": False,
         "wire.jsonl": False,
         "trace.zip": False,
-        png_rel: False,
+        "screenshots": False,
     }
 
     for filename in required_files:
@@ -77,6 +77,27 @@ def validate_task(task_dir: Path) -> dict:
                 elif len(result_data.get("top_papers", [])) < 3:
                     warnings.append(f"top_papers 少于3篇，实际: {len(result_data.get('top_papers', []))}")
 
+                # recent_papers：近五年 Top10 论文的 OpenAlex 核查（契约 §3）
+                rp = result_data.get("recent_papers")
+                if not isinstance(rp, list) or not rp:
+                    issues.append("success 状态但缺少 recent_papers（近五年论文清单）")
+                else:
+                    for i, paper in enumerate(rp, 1):
+                        if paper.get("match_status") not in ("matched", "not_found"):
+                            issues.append(f"recent_papers[{i}] match_status 非法: {paper.get('match_status')}")
+                        if not isinstance(paper.get("gs_citations"), int):
+                            issues.append(f"recent_papers[{i}] gs_citations 应为整数")
+                        shot = paper.get("screenshot")
+                        if not shot:
+                            issues.append(f"recent_papers[{i}] 缺少 screenshot 字段")
+                        elif not (task_dir / "screenshots" / shot).exists():
+                            issues.append(f"recent_papers[{i}] 声明的截图不存在: {shot}")
+                        if paper.get("match_status") == "matched" and \
+                                not isinstance(paper.get("openalex_citations"), int):
+                            issues.append(f"recent_papers[{i}] openalex_citations 应为整数（matched）")
+                    if sum(1 for p in rp if p.get("match_status") == "matched") == 0:
+                        warnings.append("recent_papers 全部 not_found（OpenAlex 未收录），需人工复核")
+
         except json.JSONDecodeError as e:
             issues.append(f"result.json 格式错误: {e}")
 
@@ -115,17 +136,18 @@ def validate_task(task_dir: Path) -> dict:
         except Exception as e:
             issues.append(f"wire.jsonl 读取失败: {e}")
 
-    # 4. 验证截图（screenshots/ 子目录）
-    screenshot = task_dir / "screenshots" / f"{task_id}_profile.png"
-    if screenshot.exists():
-        size_kb = screenshot.stat().st_size / 1024
+    # 4. 验证截图（screenshots/ 子目录：每篇 recent_papers 一张
+    #    <task_id>_paper_NN.png，not_found 篇目为搜索结果页留证）
+    shots_dir = task_dir / "screenshots"
+    pngs = sorted(shots_dir.glob(f"{task_id}_paper_*.png")) if shots_dir.exists() else []
+    if not pngs:
+        issues.append(f"缺失截图: screenshots/ 中没有 {task_id}_paper_*.png")
+    for png in pngs:
+        size_kb = png.stat().st_size / 1024
         if size_kb < 50:
-            warnings.append(f"截图文件过小: {size_kb:.1f} KB（可能截图失败）")
+            warnings.append(f"截图文件过小: {png.name} {size_kb:.1f} KB（可能截图失败）")
         elif size_kb > 5000:
-            warnings.append(f"截图文件过大: {size_kb:.1f} KB")
-        # captcha 状态下的截图大概率是验证页而非作者主页，标人工复核
-        if result_data and result_data.get("status") == "captcha":
-            warnings.append("status=captcha 但存在截图（可能是验证页截图），需人工复核")
+            warnings.append(f"截图文件过大: {png.name} {size_kb:.1f} KB")
 
     # 5. 验证 trace.zip（完整性 + 关键条目）
     trace_zip = task_dir / "trace.zip"
