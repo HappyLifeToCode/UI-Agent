@@ -13,14 +13,18 @@
     python scripts/run_tasks.py --limit 3                # 只跑前 3 条
     python scripts/run_tasks.py --start-from task_0003   # 从某条开始（含）
     python scripts/run_tasks.py --dry-run                # 只打印将执行的命令，不真跑
+    python scripts/run_tasks.py --model kimi-for-coding/k1  # 指定模型
 
 产出（每条任务，data/<task_id>/ 标准目录，严格 5 项）：
     task.json                     任务定义副本（执行器写入）
-    result.json                   Agent 抽取的结果（Agent 写入；执行器跑完后
-                                  补写 _run 执行元信息，见 [M5] annotate_run_info）
+    result.json                   Agent 抽取的结果，含 recent_papers 近五年
+                                  Top10 论文及 OpenAlex 核查数据（Agent 写入；
+                                  执行器跑完后补写 _run 执行元信息，见 [M5]）
     wire.jsonl                    会话完整轨迹（从 Kimi 会话目录复制）
     trace.zip                     Playwright 浏览器侧轨迹（MCP --save-trace 产出）
-    screenshots/<task_id>_profile.png  整页截图（执行器从 MCP 输出目录归档）
+    screenshots/<task_id>_paper_NN.png  每篇论文一张 OpenAlex 详情页整页截图
+                                  （not_found 篇目为搜索结果页留证；执行器从
+                                  MCP 输出目录归档）
     data/mapping.jsonl            task_id <-> session_id <-> 框架 映射表（追加写）
 
     执行日志写在 logs/<task_id>.log（项目根 logs/ 目录，不属于交付目录），
@@ -94,7 +98,7 @@ if not KIMI_BIN.exists():
     KIMI_BIN = "kimi"
 
 FRAMEWORK = "kimi-code"
-MODEL = "kimi-for-coding/k3"
+MODEL = os.environ.get("AGENT_MODEL", "kimi-for-coding/k3")  # 可通过环境变量或 CLI 参数覆盖
 
 
 # =============================================================================
@@ -254,9 +258,11 @@ def _pack_trace_zip(traces_dir: Path, before: dict, dest: Path) -> bool:
 
 
 def collect_browser_artifacts(before: dict, task: dict, task_dir: Path):
-    """从 MCP 输出目录收归浏览器侧产物：trace.zip 和整页截图。
+    """从 MCP 输出目录收归浏览器侧产物：trace.zip 和论文详情页截图。
 
-    返回 (has_trace, has_screenshot)。
+    截图契约：每篇 recent_papers 一张 <task_id>_paper_NN.png（NN = rank 两位
+    编号），matched 篇目为 OpenAlex 论文详情页，not_found 篇目为搜索结果页
+    留证。返回 (has_trace, has_screenshot)，has_screenshot 为"至少有一张"。
     """
     task_id = task["task_id"]
 
@@ -264,30 +270,29 @@ def collect_browser_artifacts(before: dict, task: dict, task_dir: Path):
     has_trace = _pack_trace_zip(MCP_OUTPUT_DIR / "traces", before, task_dir / "trace.zip")
 
     # --- 截图：归档到 screenshots/ 子目录 ---
-    has_screenshot = False
     screenshots_dir = task_dir / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
-    png_name = f"{task_id}_profile.png"
-    # Agent 按要求命名截图，可能落在 MCP 输出目录或项目根目录
-    for candidate in (MCP_OUTPUT_DIR / png_name, PROJECT_ROOT / png_name):
-        if candidate.exists():
-            shutil.move(str(candidate), str(screenshots_dir / png_name))
-            has_screenshot = True
-            break
-    if not has_screenshot:
-        # 兜底：本次运行新产生的任意 png
+    moved = 0
+    # Agent 按要求命名 <task_id>_paper_NN.png，可能落在 MCP 输出目录或项目根目录
+    for base in (MCP_OUTPUT_DIR, PROJECT_ROOT):
+        if not base.exists():
+            continue
+        for p in sorted(base.glob(f"{task_id}_paper_*.png")):
+            shutil.move(str(p), str(screenshots_dir / p.name))
+            moved += 1
+    if moved == 0:
+        # 兜底：本次运行新产生的任意 png，按产生时间顺序编号归档
         new_pngs = []
         if MCP_OUTPUT_DIR.exists():
             for p in MCP_OUTPUT_DIR.glob("*.png"):
                 mtime = p.stat().st_mtime
                 if _is_new(str(p.relative_to(MCP_OUTPUT_DIR)), mtime, before):
                     new_pngs.append((mtime, p))
-        if new_pngs:
-            newest = max(new_pngs)[1]
-            shutil.move(str(newest), str(screenshots_dir / png_name))
-            has_screenshot = True
+        for i, (_, p) in enumerate(sorted(new_pngs), start=1):
+            shutil.move(str(p), str(screenshots_dir / f"{task_id}_paper_{i:02d}.png"))
+            moved += 1
 
-    return has_trace, has_screenshot
+    return has_trace, moved > 0
 
 
 # =============================================================================
@@ -303,8 +308,10 @@ def clean_task_outputs(task: dict, task_dir: Path):
     不属于 data/<task_id>/ 交付目录）。
     """
     task_id = task["task_id"]
-    for name in ("result.json", "wire.jsonl", "trace.zip", f"{task_id}_profile.png", "run.log"):
+    for name in ("result.json", "wire.jsonl", "trace.zip", "run.log"):
         (task_dir / name).unlink(missing_ok=True)
+    for p in task_dir.glob(f"{task_id}_paper_*.png"):
+        p.unlink(missing_ok=True)
     shutil.rmtree(task_dir / "screenshots", ignore_errors=True)
 
 
@@ -367,7 +374,7 @@ def derive_failure_reason(task_dir: Path, status: str, returncode: int):
         except json.JSONDecodeError:
             pass
     if returncode == -1:
-        return "任务超时（10 分钟）"
+        return "任务超时（30 分钟）"
     if returncode == -2:
         return "CLI 执行异常"
     if status == "no_result":
@@ -450,6 +457,16 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
     """执行单个任务，返回执行记录。"""
     task_id = task["task_id"]
     task_dir = PROJECT_ROOT / "data" / task_id
+
+    print(f"\n{'='*60}")
+    print(f"[{task_id}] {task['person_name']} @ {task.get('affiliation_hint', 'N/A')}")
+    print(f"{'='*60}")
+
+    if dry_run:
+        # dry-run 不落盘：不建目录、不写 task.json，只打印将执行的命令
+        print(f"[DRY-RUN] 将执行: {KIMI_BIN} -p '<prompt>'")
+        return {"task_id": task_id, "status": "dry_run", "session_id": None}
+
     task_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. 保存任务定义副本
@@ -460,14 +477,6 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
 
     # 3. 构造 Kimi Code 命令（直接使用可执行文件路径）
     cmd = [str(KIMI_BIN), "-p", prompt]
-
-    print(f"\n{'='*60}")
-    print(f"[{task_id}] {task['person_name']} @ {task.get('affiliation_hint', 'N/A')}")
-    print(f"{'='*60}")
-
-    if dry_run:
-        print(f"[DRY-RUN] 将执行: {KIMI_BIN} -p '<prompt>'")
-        return {"task_id": task_id, "status": "dry_run", "session_id": None}
 
     # 4. 清理旧产出 [M5]，快照执行前的 session 列表 [M3] 与 MCP 输出目录 [M4]
     clean_task_outputs(task, task_dir)
@@ -487,12 +496,12 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 text=True,
-                timeout=600,  # 10分钟超时
+                timeout=1800,  # 30分钟超时（近五年 Top10 逐篇核查后步数翻倍，10 分钟不够）
                 shell=False
             )
         returncode = result.returncode
     except subprocess.TimeoutExpired:
-        print(f"[ERROR] 任务超时（10分钟）")
+        print(f"[ERROR] 任务超时（30分钟）")
         returncode = -1
     except Exception as e:
         print(f"[ERROR] 执行失败: {e}")
@@ -603,7 +612,13 @@ def main():
     parser.add_argument("--max-captcha-retry", type=int, default=2, help="CAPTCHA 最大重试次数")
     parser.add_argument("--max-consecutive-captcha", type=int, default=2,
                         help="连续 N 个任务 CAPTCHA 未解除则熔断终止批次（默认 2）")
+    parser.add_argument("--model", help="指定模型（覆盖环境变量 AGENT_MODEL 和默认值）")
     args = parser.parse_args()
+
+    # 应用命令行参数中的模型设置
+    global MODEL
+    if args.model:
+        MODEL = args.model
 
     # 加载任务列表
     tasks_path = PROJECT_ROOT / "tasks" / "tasks.jsonl"
