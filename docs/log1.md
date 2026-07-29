@@ -61,6 +61,7 @@ python scripts/run_tasks.py --limit 1 --no-delay       # 单条测试（禁用�
   近五年 Top10 论文的 OpenAlex 核查数据）
 - ✅ `wire.jsonl` - 完整 Agent 轨迹（Kimi 侧）
 - ✅ `trace.zip` - Playwright 浏览器侧轨迹（可用 `npx playwright show-trace` 回放）
+- ✅ `screenshots/task_XXXX_profile.png` - 作者主页整页截图
 - ✅ `screenshots/task_XXXX_paper_NN.png` - 每篇 recent_papers 一张 OpenAlex
   详情页整页截图（not_found 篇目为搜索结果页留证）
 

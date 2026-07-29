@@ -1,9 +1,11 @@
 # 数据格式契约
 
 本页是阶段1交付数据的**唯一格式权威**。转换管线、质检页以本页为准；
-格式有任何变更，24 小时内更新本页并同步。最后更新：2026-07-28。
+格式有任何变更，24 小时内更新本页并同步。最后更新：2026-07-29。
 
 **变更记录**
+- 2026-07-29：应下游要求，**恢复作者主页整页截图**（`<task_id>_profile.png`），
+  与论文截图并存；screenshots/ 现为 1 张主页截图 + N 张论文截图。
 - 2026-07-28：任务形态扩展为"谷歌学术检索 + OpenAlex 论文核查"。
   ① 取消作者主页整页截图（`<task_id>_profile.png`），截图改为每篇论文一张
   OpenAlex 页面截图（`<task_id>_paper_NN.png`）；② result.json 新增
@@ -24,9 +26,10 @@ data/
     ├── wire.jsonl                   # Agent 完整轨迹（见 §4）
     ├── trace.zip                    # Playwright 浏览器侧轨迹（见 §6）
     └── screenshots/
+        ├── <task_id>_profile.png    # 作者主页整页截图（fullPage，离屏渲染）
         ├── <task_id>_paper_01.png   # 论文 1 的 OpenAlex 详情页整页截图
-        ├── ...                      # （fullPage，离屏渲染；编号 = recent_papers
-        └── <task_id>_paper_10.png   #  的 rank；not_found 篇目为搜索结果页留证）
+        ├── ...                      # （编号 = recent_papers 的 rank；
+        └── <task_id>_paper_10.png   #  not_found 篇目为搜索结果页留证）
 ```
 
 注意：
@@ -223,7 +226,8 @@ trace.zip
 python qa/validate_data.py      # 全部通过 exit 0；任一任务有 issue exit 1
 ```
 
-检查项：5 项产物齐全（screenshots/ 内需有 `<task_id>_paper_*.png`）、
+检查项：5 项产物齐全（screenshots/ 内需有 `<task_id>_profile.png` 主页截图
+与 `<task_id>_paper_*.png` 论文截图）、
 result.json 字段与整数类型（含 recent_papers 逐篇 match_status / gs_citations /
 openalex_citations 与声明截图存在性）、`_run` 元信息是否存在（缺失仅警告）、
 wire.jsonl 行数与 tool_call 数下限、**断档配对检测**（§4）、

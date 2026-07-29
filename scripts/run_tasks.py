@@ -22,6 +22,7 @@
                                   执行器跑完后补写 _run 执行元信息，见 [M5]）
     wire.jsonl                    会话完整轨迹（从 Kimi 会话目录复制）
     trace.zip                     Playwright 浏览器侧轨迹（MCP --save-trace 产出）
+    screenshots/<task_id>_profile.png  作者主页整页截图（执行器归档）
     screenshots/<task_id>_paper_NN.png  每篇论文一张 OpenAlex 详情页整页截图
                                   （not_found 篇目为搜索结果页留证；执行器从
                                   MCP 输出目录归档）
@@ -273,11 +274,14 @@ def collect_browser_artifacts(before: dict, task: dict, task_dir: Path):
     screenshots_dir = task_dir / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     moved = 0
-    # Agent 按要求命名 <task_id>_paper_NN.png，可能落在 MCP 输出目录或项目根目录
+    # Agent 按要求命名 <task_id>_profile.png（作者主页整页）和
+    # <task_id>_paper_NN.png（每篇论文一张），可能落在 MCP 输出目录或项目根目录
     for base in (MCP_OUTPUT_DIR, PROJECT_ROOT):
         if not base.exists():
             continue
-        for p in sorted(base.glob(f"{task_id}_paper_*.png")):
+        named = sorted(base.glob(f"{task_id}_profile.png")) + \
+            sorted(base.glob(f"{task_id}_paper_*.png"))
+        for p in named:
             shutil.move(str(p), str(screenshots_dir / p.name))
             moved += 1
     if moved == 0:
@@ -308,7 +312,7 @@ def clean_task_outputs(task: dict, task_dir: Path):
     不属于 data/<task_id>/ 交付目录）。
     """
     task_id = task["task_id"]
-    for name in ("result.json", "wire.jsonl", "trace.zip", "run.log"):
+    for name in ("result.json", "wire.jsonl", "trace.zip", "run.log", f"{task_id}_profile.png"):
         (task_dir / name).unlink(missing_ok=True)
     for p in task_dir.glob(f"{task_id}_paper_*.png"):
         p.unlink(missing_ok=True)
