@@ -1,7 +1,15 @@
 # 数据格式契约
 
 本页是阶段1交付数据的**唯一格式权威**。转换管线、质检页以本页为准；
-格式有任何变更，24 小时内更新本页并同步。最后更新：2026-07-22。
+格式有任何变更，24 小时内更新本页并同步。最后更新：2026-07-28。
+
+**变更记录**
+- 2026-07-28：任务形态扩展为"谷歌学术检索 + OpenAlex 论文核查"。
+  ① 取消作者主页整页截图（`<task_id>_profile.png`），截图改为每篇论文一张
+  OpenAlex 页面截图（`<task_id>_paper_NN.png`）；② result.json 新增
+  `recent_papers` 数组（近五年谷歌学术被引 Top 10 论文 + OpenAlex 核查数据）。
+  注：导师要求用 Web of Science 核查，因当前无机构权限暂用 OpenAlex 替代，
+  返校后切换 WoS，届时本契约相应字段（openalex_* → wos_*）再变更一次。
 
 ## 1. 目录契约
 
@@ -16,7 +24,9 @@ data/
     ├── wire.jsonl                   # Agent 完整轨迹（见 §4）
     ├── trace.zip                    # Playwright 浏览器侧轨迹（见 §6）
     └── screenshots/
-        └── <task_id>_profile.png    # 作者主页整页截图（fullPage，离屏渲染）
+        ├── <task_id>_paper_01.png   # 论文 1 的 OpenAlex 详情页整页截图
+        ├── ...                      # （fullPage，离屏渲染；编号 = recent_papers
+        └── <task_id>_paper_10.png   #  的 rank；not_found 篇目为搜索结果页留证）
 ```
 
 注意：
@@ -55,6 +65,34 @@ Agent 从作者主页抽取的结构化结果：
     {"title": "Deep learning", "year": "2015", "citations": 117079},
     {"title": "Visualizing data using t-SNE", "year": "2008", "citations": 70111}
   ],
+  "recent_papers": [
+    {
+      "rank": 1,
+      "title": "Graphene oxide based fluorescent aptasensor for adenosine detection",
+      "year": "2024",
+      "gs_citations": 1523,
+      "match_status": "matched",
+      "openalex_id": "W4412345678",
+      "openalex_url": "https://openalex.org/works/W4412345678",
+      "openalex_citations": 1480,
+      "doi": "10.1000/xyz123",
+      "journal": "Nature Communications",
+      "screenshot": "task_0001_paper_01.png"
+    },
+    {
+      "rank": 2,
+      "title": "Some workshop paper not indexed",
+      "year": "2023",
+      "gs_citations": 41,
+      "match_status": "not_found",
+      "openalex_id": null,
+      "openalex_url": null,
+      "openalex_citations": null,
+      "doi": null,
+      "journal": null,
+      "screenshot": "task_0001_paper_02.png"
+    }
+  ],
   "profile_url": "https://scholar.google.com/citations?user=JicYPdAAAAAJ",
   "status": "success",
   "_run": {
@@ -81,6 +119,18 @@ Agent 从作者主页抽取的结构化结果：
 - `year`：**字符串**。
 - `top_papers`：按被引数降序，最多 3 篇。
 - `interests`：作者主页列出的全部研究兴趣标签，顺序与页面一致。
+- `recent_papers`：近五年（2021 年及以后）谷歌学术被引 Top 10 论文的
+  OpenAlex 核查结果，按谷歌学术被引数降序，`rank` 从 1 连续编号，
+  不足 10 篇时有几篇列几篇。字段规则：
+  - `gs_citations`：谷歌学术被引数，纯整数；
+  - `match_status` ∈ `matched` / `not_found`。OpenAlex 覆盖不全，
+    not_found 属正常情况，**不允许静默丢弃**：not_found 篇目同样占一个
+    rank，并截搜索结果页留证；
+  - `match_status = not_found` 时 `openalex_id` / `openalex_url` /
+    `openalex_citations` / `doi` / `journal` 均为 null；
+  - `openalex_citations`：OpenAlex Cited by 数，纯整数；
+  - `screenshot`：对应截图文件名（`<task_id>_paper_NN.png`，NN = rank
+    两位数字），文件必须存在于 `screenshots/` 中。
 
 ## 4. wire.jsonl（Agent 轨迹）
 
@@ -173,6 +223,8 @@ trace.zip
 python qa/validate_data.py      # 全部通过 exit 0；任一任务有 issue exit 1
 ```
 
-检查项：5 项产物齐全、result.json 字段与整数类型、`_run` 元信息是否存在
-（缺失仅警告）、wire.jsonl 行数与 tool_call 数下限、**断档配对检测**（§4）、
-截图大小、captcha 状态带截图的人工复核提示、trace.zip 完整性。
+检查项：5 项产物齐全（screenshots/ 内需有 `<task_id>_paper_*.png`）、
+result.json 字段与整数类型（含 recent_papers 逐篇 match_status / gs_citations /
+openalex_citations 与声明截图存在性）、`_run` 元信息是否存在（缺失仅警告）、
+wire.jsonl 行数与 tool_call 数下限、**断档配对检测**（§4）、
+截图大小、trace.zip 完整性。

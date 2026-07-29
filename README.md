@@ -61,11 +61,13 @@ python scripts/run_tasks.py --limit 1 --no-delay
 ```
 data/task_0001/
 ├── task.json        # 任务定义副本
-├── result.json      # 抽取结果（姓名/单位/引用数/代表作）
+├── result.json      # 抽取结果（姓名/单位/引用数/代表作 + recent_papers 近五年
+│                    #   Top10 论文的 OpenAlex 核查数据）
 ├── wire.jsonl       # Agent 完整轨迹
 ├── trace.zip        # 浏览器侧轨迹（npx playwright show-trace 可回放）
 └── screenshots/
-    └── task_0001_profile.png   # 作者主页整页截图
+    ├── task_0001_paper_01.png   # 论文 1 的 OpenAlex 详情页整页截图
+    └── ...                      # 每篇 recent_papers 一张（not_found 为搜索页留证）
 ```
 
 ### 第 3 步：全量跑批
@@ -85,7 +87,12 @@ python scripts/run_tasks.py --start-from task_0003   # 从某条开始补跑
 python scripts/run_tasks.py --limit 3                # 只跑前 3 条
 python scripts/run_tasks.py --dry-run                # 只打印计划，不真跑
 python scripts/run_tasks.py --no-delay               # 关闭反爬延迟（仅测试）
+python scripts/run_tasks.py --model kimi-for-coding/k1  # 指定模型（默认 k3）
 ```
+
+**模型配置**：默认使用 `kimi-for-coding/k3`，可通过以下方式指定其他模型：
+- 命令行参数：`--model <模型名>`（优先级最高）
+- 环境变量：`set AGENT_MODEL=<模型名>`（Windows）或 `export AGENT_MODEL=<模型名>`（Linux/Mac）
 
 ### 第 4 步：质检
 
