@@ -44,10 +44,9 @@
 
 # 第二部分：OpenAlex 逐篇核查（对第一部分选出的每篇论文，按顺序执行）
 
-7. 用 browser_navigate 打开 OpenAlex 首页 https://openalex.org ，
-   用页面搜索框输入论文完整标题并提交。
-   - 若首页搜索框不可用，可直接打开搜索结果页：
-     https://openalex.org/works?search=<标题>（URL 中空格替换为 %20）。
+7. 用 browser_navigate 直接打开 OpenAlex 搜索结果页：
+   https://openalex.org/works?search=<论文完整标题>（URL 中空格替换为 %20）。
+   - OpenAlex 无反爬限制，【不需要】先开首页再用搜索框，直接打开结果页即可。
 
 8. 在结果列表中查找该论文（匹配规则：忽略大小写、标点、冒号差异，
    标题核心词一致即算同一篇）：
@@ -116,7 +115,9 @@ recent_papers 字段规则：
 - 页面加载完成后、执行下一步操作前，先用 browser_evaluate 执行
   `window.scrollBy(0, 300 + Math.floor(Math.random() * 400))` 滚动页面，模拟真人浏览。
 - 禁止连续无间隔地发起页面跳转或点击。
-- 以上节奏规则主要针对谷歌学术；OpenAlex 无反爬限制，但也请保持正常浏览节奏。
+- 以上节奏规则【仅适用于谷歌学术部分】。OpenAlex 无反爬限制，
+  核查论文时【不要】使用 browser_wait_for 等待、【不要】滚动模拟，
+  按"搜索结果页 → 详情页 → 截图"的最短路径连续操作即可。
 
 # 异常处理
 
