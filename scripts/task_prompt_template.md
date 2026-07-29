@@ -47,15 +47,27 @@
 7. 用 browser_navigate 直接打开 OpenAlex 搜索结果页：
    https://openalex.org/works?search=<论文完整标题>（URL 中空格替换为 %20）。
    - OpenAlex 无反爬限制，【不需要】先开首页再用搜索框，直接打开结果页即可。
+   - 标题中的问号等标点符号直接去掉，只保留文字和空格（? 会被当作
+     通配符导致搜索报错）。
+   - 搜索结果页是异步加载的：若快照显示结果为空或还在加载，稍等片刻
+     重新取一次快照即可，不要反复刷新页面。
 
 8. 在结果列表中查找该论文（匹配规则：忽略大小写、标点、冒号差异，
    标题核心词一致即算同一篇）：
    - 匹配到：点击进入该论文的详情页（URL 形如 openalex.org/works/Wxxxx）。
+   - 若同一论文有多条记录（arXiv / SSRN / 正式发表版等），【直接取排序
+     最前的第一条匹配结果】，不要打开多条记录逐条对比版本。
+   - 若点击结果只弹出侧边预览面板而非完整页面，直接用 browser_navigate
+     打开该论文的 /works/Wxxxx 详情页 URL，不要在面板上寻找展开按钮。
    - 前几条结果都不是该论文：本篇 match_status 记为 not_found，
      直接在当前搜索结果页执行第 9 步的截图（留证），然后继续下一篇。
 
 9. 在论文详情页（或 not_found 时的搜索结果页）：
    - 匹配到时抽取：OpenAlex 被引数（Cited by）、DOI、期刊/来源名称、发表年份。
+   - 【只抽取详情页正文直接显示的字段】：DOI 或来源名称在正文上看不到就
+     填 null，【不要】切换到其他标签页（如 Locations）、【不要】访问
+     API 页面去找。每篇论文按「搜索结果页 → 详情页 → 截图」一次走完，
+     不要返回结果页重复确认。
    - 用 browser_take_screenshot 整页截图：fullPage 参数设为 true，
      filename 设为 {{TASK_ID}}_paper_NN.png（NN 为两位编号 01~10，
      与该论文在 recent_papers 中的 rank 一致；not_found 篇目同样占一个编号）。

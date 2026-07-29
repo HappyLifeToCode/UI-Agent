@@ -378,7 +378,7 @@ def derive_failure_reason(task_dir: Path, status: str, returncode: int):
         except json.JSONDecodeError:
             pass
     if returncode == -1:
-        return "任务超时（30 分钟）"
+        return "任务超时（45 分钟）"
     if returncode == -2:
         return "CLI 执行异常"
     if status == "no_result":
@@ -500,12 +500,12 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 text=True,
-                timeout=1800,  # 30分钟超时（近五年 Top10 逐篇核查后步数翻倍，10 分钟不够）
+                timeout=2700,  # 45分钟超时（OpenAlex 逐篇核查是 SPA，加载慢，30 分钟实测不够）
                 shell=False
             )
         returncode = result.returncode
     except subprocess.TimeoutExpired:
-        print(f"[ERROR] 任务超时（30分钟）")
+        print(f"[ERROR] 任务超时（45分钟）")
         returncode = -1
     except Exception as e:
         print(f"[ERROR] 执行失败: {e}")
