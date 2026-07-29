@@ -6,7 +6,7 @@
 - 目标人物：{{PERSON_NAME}}
 - 单位线索：{{AFFILIATION_HINT}}
 
-# 第一部分：谷歌学术（作者信息 + 近五年代表作清单）
+# 第一部分：谷歌学术（作者信息 + 主页截图 + 近五年代表作清单）
 
 1. 用 browser_navigate 打开谷歌学术首页：https://scholar.google.com/?hl=en
    - 【禁止】直接访问作者搜索 URL（/citations?view_op=search_authors&...）——
@@ -30,7 +30,13 @@
    - 总被引数、h-index、i10-index（都取 "All" 列，不是 "Since 20xx" 列）
    - 被引数最高的 3 篇代表作（标题、发表年份、被引数）
 
-5. 把论文列表按发表年份降序排列（点击论文表的 "Year" 表头或页面排序控件），
+5. 用 browser_take_screenshot 对作者主页整页截图：
+   - fullPage 参数设为 true
+   - filename 设为 {{TASK_ID}}_profile.png
+   - 截图文件由外层执行器统一归档到 data/{{TASK_ID}}/screenshots/，
+     你【不要】用 cp/mv 等命令手动移动截图文件。
+
+6. 把论文列表按发表年份降序排列（点击论文表的 "Year" 表头或页面排序控件），
    从 2021 年及以后发表的论文中，取谷歌学术被引数最高的 10 篇，记录每篇的：
    标题、发表年份、谷歌学术被引数。
    - 若 2021 年及以后的论文不足 10 篇，有几篇取几篇。
@@ -38,18 +44,18 @@
 
 # 第二部分：OpenAlex 逐篇核查（对第一部分选出的每篇论文，按顺序执行）
 
-6. 用 browser_navigate 打开 OpenAlex 首页 https://openalex.org ，
+7. 用 browser_navigate 打开 OpenAlex 首页 https://openalex.org ，
    用页面搜索框输入论文完整标题并提交。
    - 若首页搜索框不可用，可直接打开搜索结果页：
      https://openalex.org/works?search=<标题>（URL 中空格替换为 %20）。
 
-7. 在结果列表中查找该论文（匹配规则：忽略大小写、标点、冒号差异，
+8. 在结果列表中查找该论文（匹配规则：忽略大小写、标点、冒号差异，
    标题核心词一致即算同一篇）：
    - 匹配到：点击进入该论文的详情页（URL 形如 openalex.org/works/Wxxxx）。
    - 前几条结果都不是该论文：本篇 match_status 记为 not_found，
-     直接在当前搜索结果页执行第 8 步的截图（留证），然后继续下一篇。
+     直接在当前搜索结果页执行第 9 步的截图（留证），然后继续下一篇。
 
-8. 在论文详情页（或 not_found 时的搜索结果页）：
+9. 在论文详情页（或 not_found 时的搜索结果页）：
    - 匹配到时抽取：OpenAlex 被引数（Cited by）、DOI、期刊/来源名称、发表年份。
    - 用 browser_take_screenshot 整页截图：fullPage 参数设为 true，
      filename 设为 {{TASK_ID}}_paper_NN.png（NN 为两位编号 01~10，
@@ -59,7 +65,7 @@
 
 # 第三部分：写入结果
 
-9. 用 Write 工具把抽取结果写入文件 ./data/{{TASK_ID}}/result.json（目录不存在会自动创建），格式如下：
+10. 用 Write 工具把抽取结果写入文件 ./data/{{TASK_ID}}/result.json（目录不存在会自动创建），格式如下：
 
 ```json
 {
@@ -124,6 +130,7 @@ recent_papers 字段规则：
 
 任务完成时：
 - ./data/{{TASK_ID}}/result.json 已写入（含 recent_papers 数组）
+- 已生成作者主页整页截图 {{TASK_ID}}_profile.png
 - recent_papers 中每篇论文都有一张对应截图（matched 截 OpenAlex 论文详情页，
   not_found 截搜索结果页留证），文件名为 {{TASK_ID}}_paper_NN.png，
   归档到 screenshots/ 由执行器完成，无需你处理

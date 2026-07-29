@@ -136,13 +136,17 @@ def validate_task(task_dir: Path) -> dict:
         except Exception as e:
             issues.append(f"wire.jsonl 读取失败: {e}")
 
-    # 4. 验证截图（screenshots/ 子目录：每篇 recent_papers 一张
-    #    <task_id>_paper_NN.png，not_found 篇目为搜索结果页留证）
+    # 4. 验证截图（screenshots/ 子目录：1 张作者主页 <task_id>_profile.png
+    #    + 每篇 recent_papers 一张 <task_id>_paper_NN.png，
+    #    not_found 篇目为搜索结果页留证）
     shots_dir = task_dir / "screenshots"
+    profile_png = shots_dir / f"{task_id}_profile.png"
     pngs = sorted(shots_dir.glob(f"{task_id}_paper_*.png")) if shots_dir.exists() else []
+    if not profile_png.exists():
+        issues.append(f"缺失截图: screenshots/{task_id}_profile.png（作者主页整页截图）")
     if not pngs:
         issues.append(f"缺失截图: screenshots/ 中没有 {task_id}_paper_*.png")
-    for png in pngs:
+    for png in ([profile_png] if profile_png.exists() else []) + pngs:
         size_kb = png.stat().st_size / 1024
         if size_kb < 50:
             warnings.append(f"截图文件过小: {png.name} {size_kb:.1f} KB（可能截图失败）")

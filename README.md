@@ -66,6 +66,7 @@ data/task_0001/
 ├── wire.jsonl       # Agent 完整轨迹
 ├── trace.zip        # 浏览器侧轨迹（npx playwright show-trace 可回放）
 └── screenshots/
+    ├── task_0001_profile.png    # 作者主页整页截图
     ├── task_0001_paper_01.png   # 论文 1 的 OpenAlex 详情页整页截图
     └── ...                      # 每篇 recent_papers 一张（not_found 为搜索页留证）
 ```
