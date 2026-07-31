@@ -38,10 +38,13 @@ base_url = "https://api.siliconflow.cn/v1"
 [models."qwen-maas/Qwen/Qwen3.5-27B"]
 provider = "qwen-maas"
 model = "Qwen/Qwen3.5-27B"
-max_context_size = 131072
+max_context_size = 262144
 max_output_size = 8192
 capabilities = ["image_in", "thinking", "tool_use"]
 display_name = "Qwen3.5 27B"
+
+[loop_control]
+reserved_context_size = 16384
 ```
 
 切换模型只需改第一行 `default_model`：
@@ -68,6 +71,22 @@ default_model = "kimi-for-coding/k3"
 
 ## 注意事项
 
-1. **`_run.model` 字段**：目前执行器脚本中 `MODEL` 常量写死为 `"kimi-for-coding/k3"`，使用其他模型时 `mapping.jsonl` 和 `result.json` 的 `_run.model` 仍显示该值。这只是日志标签，不影响实际使用的模型。后续版本会改为动态检测。
-2. **截图命名**：Qwen 在非 success 场景下偶有截图文件名与 prompt 要求不一致（如 `_captcha.png` 而非 `_profile.png`），脚本的 `collect_browser_artifacts` 有兜底匹配逻辑。
-3. **超时设置**：小模型可能响应较慢，必要时调大 `subprocess.run` 的 `timeout` 参数。
+1. **小模型上下文配置（必须，否则任务必败）**：`max_context_size` 按模型真实
+   上下文填写（Qwen3.5-27B 为 256K，填 131072 会白白浪费一半预算）；
+   同时必须把 `[loop_control] reserved_context_size` 从默认的 50000 调小
+   （建议 16384，≥ 2× max_output_size）。kimi-code 在「剩余上下文不足
+   reserved_context_size」时触发 compaction（上下文压缩），默认配置下
+   131K 窗口输入到 ~81K 就触发；而 compaction 请求一旦被 provider 限流
+   （429），整个会话直接中止、任务归零。此项只能用户手动改
+   `~/.kimi-code/config.toml`，执行器无法代劳——搭建环境时务必检查。
+2. **`_run.model` / mapping 的 model 字段**：执行器记录的是 `--model` 参数或
+   环境变量 `AGENT_MODEL` 的值（默认 `kimi-for-coding/k3`），与实际生效模型
+   （由 config.toml 的 `default_model` 决定）是两条通道。用小模型跑批时
+   【必须】加 `--model "qwen-maas/Qwen/Qwen3.5-27B"`，否则训练数据元信息错标。
+3. **429 限流**：硅基流动等 provider 有 RPM 限制，多人共用 API Key 并发测试
+   极易触发。执行器已内置 `--max-429-retry`（默认 2 次，冷却 2-5 分钟），
+   但频繁 429 说明额度不足，应错峰或升级套餐。
+4. **截图命名**：Qwen 在非 success 场景下偶有截图文件名与 prompt 要求不一致（如 `_captcha.png` 而非 `_profile.png`），脚本的 `collect_browser_artifacts` 有兜底匹配逻辑。
+5. **超时设置**：单任务超时已调整为 45 分钟（`run_tasks.py` 的
+   `subprocess.run timeout=2700`）。小模型在长列表页上可能陷入
+   「提取不完整 → 重新提取」的循环，超时是最后一道防线。

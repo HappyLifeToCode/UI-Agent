@@ -83,6 +83,11 @@ Kimi K3 是默认模型，但也支持 OpenAI 兼容接口的其他模型。已�
 （硅基流动）在 3 个任务上产出与 K3 一致。配置方法和性能对比见
 **[docs/models.md](models.md)**，配置模板见 `scripts/config_qwen_example.toml`。
 
+> **小模型必读**：27B 这类小上下文模型，`max_context_size` 和
+> `[loop_control] reserved_context_size` 两项配置缺一个任务都跑不完
+> （默认配置下 131K 窗口输入到 ~81K 就触发 compaction，压缩请求被限流
+> 整个会话直接中止）。只能用户手动改 config.toml，详见 models.md 注意事项第 1 条。
+
 ## 首次搭建验证
 
 ```bash
