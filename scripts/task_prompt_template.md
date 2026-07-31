@@ -84,6 +84,8 @@ async (page) => {
    top3 即被引数最高的 3 篇代表作。
 
 6. 截图：browser_take_screenshot，fullPage=true，filename={{TASK_ID}}_profile.png。
+   前提：第 5 步已成功提取到姓名和论文表格（提取成功 = 页面已渲染）；
+   若第 5 步提取为空，先按第 10 步的空白页规则刷新重试，不要截空白页。
 
 7. 提取按年份降序的论文列表（<USER_ID> 同第 4 步）：
 
@@ -129,14 +131,27 @@ async (page) => {
 ```js
 async (page) => {
   await page.goto('https://openalex.org/works/<论文的works ID>');
-  await page.waitForSelector('body', { timeout: 15000 }).catch(() => {});
-  return (await page.evaluate(() => document.body.innerText)).slice(0, 2000);
+  let text = '';
+  for (let i = 0; i < 3; i++) {
+    await page.waitForTimeout(2000 + i * 2000);
+    text = await page.evaluate(() => document.body.innerText);
+    if (text.length > 1000) break;
+    if (i === 1) await page.reload().catch(() => {});
+  }
+  return text.slice(0, 2000);
 }
 ```
 
    从正文读出 Cited by、DOI、期刊/来源名称、发表年份；正文没有的字段填 null。
+   注意：OpenAlex 是异步渲染，goto 返回不代表内容已加载，上面的代码
+   已内置「正文太短就等待重试、中间刷新一次」逻辑，照抄即可。
 
-10. 截图：browser_take_screenshot，fullPage=true，
+10. 截图前【必须确认页面已渲染出内容】：用 browser_run_code 检查
+    `document.body.innerText.length`，大于 1000 才截图；
+    不足 1000 说明页面还是空白，先 `page.reload()` 等 3 秒再检查，
+    最多重试 2 次。仍空白才允许截图（并在 result.json 的 note 说明
+    该篇页面未渲染）。【严禁把空白页当作留证截图直接交差】。
+    截图：browser_take_screenshot，fullPage=true，
     filename={{TASK_ID}}_paper_NN.png（NN 为两位编号 01~10，与 rank 一致；
     matched 截详情页，not_found 截搜索结果页留证，同样占一个编号）。
     然后继续下一篇，直到 10 篇全部核查完。

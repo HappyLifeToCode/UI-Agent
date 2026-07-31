@@ -1,6 +1,6 @@
 # Kimi Code 多模型配置参考 — Qwen3.5-27B via SiliconFlow
 # ============================================================
-# 使用方法：将下面两个 [providers] 和 [models] 段落追加到
+# 使用方法：将下面三个 [providers] / [models] / [loop_control] 段落追加到
 # ~/.kimi-code/config.toml 末尾（不要覆盖已有的 Kimi 配置），
 # 然后修改文件第一行 default_model 即可切换。
 #
@@ -11,6 +11,15 @@
 #   default_model = "kimi-for-coding/k3"
 #
 # 改完重启 Kimi Code 生效。
+#
+# 【小模型必读】以下两个数值直接决定任务能否跑完，缺一不可：
+#   1. max_context_size：必须按模型真实上下文填写（Qwen3.5-27B 为 256K）。
+#      填小了会提前触发 compaction（上下文压缩），浪费预算。
+#   2. reserved_context_size：kimi-code 默认预留 50000 token，
+#      即「剩余上下文不足 5 万就触发 compaction」。对 131K/256K 的小窗口
+#      来说太奢侈，必须显式调小（≥ max_output_size 的 2 倍即可）。
+#      compaction 请求一旦被 provider 限流（429），整个会话直接中止，
+#      能不触发就不触发。
 
 [providers.qwen-maas]
 type = "openai"
@@ -20,7 +29,12 @@ base_url = "https://api.siliconflow.cn/v1"
 [models."qwen-maas/Qwen/Qwen3.5-27B"]
 provider = "qwen-maas"
 model = "Qwen/Qwen3.5-27B"
-max_context_size = 131072
+max_context_size = 262144
 max_output_size = 8192
 capabilities = ["image_in", "thinking", "tool_use"]
 display_name = "Qwen3.5 27B"
+
+[loop_control]
+# compaction 触发点 = max_context_size - reserved_context_size
+# 256K 窗口下约为 246K 输入 token，正常任务不会触及
+reserved_context_size = 16384
