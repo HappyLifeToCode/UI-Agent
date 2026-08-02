@@ -68,7 +68,7 @@ type = "openai"
 api_key = "你的硅基流动 API Key"
 base_url = "https://api.siliconflow.cn/v1"
 
-[models."qwen-maas/Qwen/Qwen3.5-27B"]
+[models."qwen-maas/Qwen/Qwen3.5-27B"](Qwen3.6-27B同理)
 provider = "qwen-maas"
 model = "Qwen/Qwen3.5-27B"
 max_context_size = 262144
