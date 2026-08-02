@@ -123,15 +123,18 @@ Agent 从作者主页抽取的结构化结果：
 - `top_papers`：按被引数降序，最多 3 篇。
 - `interests`：作者主页列出的全部研究兴趣标签，顺序与页面一致。
 - `recent_papers`：近五年（2021 年及以后）谷歌学术被引 Top 10 论文的
-  OpenAlex 核查结果，按谷歌学术被引数降序，`rank` 从 1 连续编号，
-  不足 10 篇时有几篇列几篇。字段规则：
+  核查结果，按谷歌学术被引数降序，`rank` 从 1 连续编号，
+  不足 10 篇时有几篇列几篇。核查源支持 OpenAlex 或 Semantic Scholar：
+  - **OpenAlex 字段**：`openalex_id`、`openalex_url`、`openalex_citations`
+  - **Semantic Scholar 字段**：`s2_id`、`s2_url`、`s2_citations`
+  - 同一数据集二选一，不混用。字段规则：
   - `gs_citations`：谷歌学术被引数，纯整数；
-  - `match_status` ∈ `matched` / `not_found`。OpenAlex 覆盖不全，
+  - `match_status` ∈ `matched` / `not_found`。学术数据库覆盖不全，
     not_found 属正常情况，**不允许静默丢弃**：not_found 篇目同样占一个
     rank，并截搜索结果页留证；
-  - `match_status = not_found` 时 `openalex_id` / `openalex_url` /
-    `openalex_citations` / `doi` / `journal` 均为 null；
-  - `openalex_citations`：OpenAlex Cited by 数，纯整数；
+  - `match_status = not_found` 时核查源字段（openalex_* 或 s2_*）及
+    `doi` / `journal` 均为 null；
+  - 核查被引数（`openalex_citations` 或 `s2_citations`）：纯整数；
   - `screenshot`：对应截图文件名（`<task_id>_paper_NN.png`，NN = rank
     两位数字），文件必须存在于 `screenshots/` 中。
 
