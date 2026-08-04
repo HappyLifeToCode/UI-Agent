@@ -1,9 +1,13 @@
 # 数据格式契约
 
 本页是阶段1交付数据的**唯一格式权威**。转换管线、质检页以本页为准；
-格式有任何变更，24 小时内更新本页并同步。最后更新：2026-07-29。
+格式有任何变更，24 小时内更新本页并同步。最后更新：2026-08-03。
 
 **变更记录**
+- 2026-08-03：§4 断档对齐引入**有效请求**口径——小模型（如 Qwen3.6-27B）
+  单步内会多次重试，每次重试都产生 `llm.request` 事件但不产生上下文内容；
+  连续（中间无 context 事件）的 `llm.request` 合并计 1 次有效请求，
+  对齐判据不变（有效请求数 == 重组 assistant 消息数）。
 - 2026-07-29：应下游要求，**恢复作者主页整页截图**（`<task_id>_profile.png`），
   与论文截图并存；screenshots/ 现为 1 张主页截图 + N 张论文截图。
 - 2026-07-28：任务形态扩展为"谷歌学术检索 + OpenAlex 论文核查"。
@@ -145,13 +149,13 @@ Kimi Code 会话的原始 wire 文件原样复制，一行一个 JSON 事件。
 | `metadata` | 协议版本等，首行 | — |
 | `config.update` | system prompt、模型配置 | — |
 | `turn.prompt` | 用户任务 prompt | — |
-| `llm.request` | 一次模型请求 | 与 `step.end` 数量一致 |
+| `llm.request` | 一次模型请求（重试也会产生，见下方"有效请求"口径） | 有效请求数与 `step.end` 数量一致 |
 | `context.append_loop_event`/`step.begin` | 步骤开始 | 与 `step.end` 一一配对 |
 | `context.append_loop_event`/`content.part` | 模型输出（thinking / text） | — |
 | `context.append_loop_event`/`tool.call` | 工具调用（含 browser_*） | 与 `tool.result` 一一配对 |
 | `context.append_loop_event`/`tool.result` | 工具返回 | 与 `tool.call` 一一配对 |
 | `context.append_loop_event`/`step.end` | 步骤结束 | 与 `step.begin` 一一配对 |
-| `usage.record` | token 用量 | 与 `llm.request` 数量一致 |
+| `usage.record` | token 用量（重试不产生） | 与有效 `llm.request` 数量一致 |
 | `mcp.tools_discovered` / `llm.tools_snapshot` | MCP 工具清单 | — |
 | `context.append_message` | 消息落盘 | — |
 
@@ -161,8 +165,15 @@ Kimi Code 会话的原始 wire 文件原样复制，一行一个 JSON 事件。
 
 **轨迹断档红线**：`tool.call↔tool.result`、`step.begin↔step.end` 不配对的
 样本即断档。`qa/validate_data.py` 会自动检出并以 issue 报出（exit 1），
-不静默丢弃；转换管线侧请按"模型请求数（`llm.request`）与重放消息数"
+不静默丢弃；转换管线侧请按"有效模型请求数与重放消息数"
 再做一次对齐，对不上的样本记录原因后剔除，原因写入该样本 meta。
+
+**有效请求口径**（2026-08-03 起）：小模型（如 Qwen3.6-27B）单步内可能
+多次重试，每次重试都产生 `llm.request` 事件但不产生任何上下文事件。
+计数时将一段连续（中间无 `context.append_*` 事件）的 `llm.request`
+合并为 1 次**有效请求**；对齐判据为：有效请求数 == 重组 assistant 消息数。
+原始请求数与有效请求数均写入样本 meta（`llm_request_count` /
+`llm_request_effective`）供追溯。
 
 ## 5. mapping.jsonl（批次台账）
 

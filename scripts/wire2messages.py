@@ -171,16 +171,35 @@ def get_run_info(task_dir, task_id):
 
 
 def check_alignment(events, messages):
-    """断档对齐:llm.request 数 vs 重组 assistant 消息数(契约 §4)"""
-    n_request = sum(1 for ev in events if ev["type"] == "llm.request")
+    """断档对齐:有效 llm.request 数 vs 重组 assistant 消息数(契约 §4)
+
+    有效请求 = 重试折叠后的请求数:一段连续(中间无 context 事件)的
+    llm.request 记为 1 次有效请求。小模型(如 Qwen3.6-27B)单步内会多次
+    重试,每次重试都记一条 llm.request 但不产生任何上下文事件,不算断档;
+    折叠后仍对不上的才是真断档。meta 里保留原始计数供追溯。
+    """
+    n_request = 0
+    n_effective = 0
+    in_retry_run = False  # 是否处于一段连续 llm.request 中
+    for ev in events:
+        t = ev["type"]
+        if t == "llm.request":
+            n_request += 1
+            if not in_retry_run:
+                n_effective += 1
+                in_retry_run = True
+        elif t in ("context.append_loop_event", "context.append_message"):
+            in_retry_run = False  # 上下文事件隔断:下一条 request 属于新回合
     n_assistant = sum(1 for m in messages if m["role"] == "assistant")
     result = {
         "llm_request_count": n_request,
+        "llm_request_effective": n_effective,
         "assistant_msg_count": n_assistant,
-        "aligned": n_request == n_assistant,
+        "aligned": n_effective == n_assistant,
     }
     if not result["aligned"]:
-        result["drop_reason"] = (f"轨迹断档:llm.request={n_request} 次,"
+        result["drop_reason"] = (f"轨迹断档:有效 llm.request={n_effective} 次"
+                                 f"(原始 {n_request},重试 {n_request - n_effective}),"
                                  f"重放 assistant={n_assistant} 条")
     return result
 
