@@ -150,15 +150,7 @@ async (page) => {
 }
 ```
 
-   提取字段：
-   - **DOI**（重点）：先查正文中 "DOI:" / "doi.org/" 标记；正文无则从 page.url()
-     匹配 DOI 正则 `/10\.\d{4,}/`。正式发表论文必有 DOI，只有预印本/工作论文才填 null。
-   - **期刊/来源名称**：只填正式发表期刊名（如 "Nature Communications"），
-     【禁止】填 "arXiv.org" / "arXiv preprint" / "SSRN" / "ResearchGate" 等预印本/平台名。
-     若仅有预印本版本，填 null。
-   - **Cited by**：页面顶部引文计数（纯整数）。
-   - **发表年份**。
-   - 正文中确实没有的字段填 null。
+   从正文读出 Cited by（被引数）、DOI、期刊/来源名称、发表年份；正文没有的字段填 null。
    注意：Semantic Scholar 是 SPA 异步渲染，goto 返回不代表内容已加载，上面的代码
    已内置「正文太短就等待重试、中间刷新一次」逻辑，照抄即可。
    提取完后你仍在论文详情页，截图时就在当前页截。
