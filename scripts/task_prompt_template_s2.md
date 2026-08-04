@@ -109,6 +109,9 @@ async (page) => {
    Pattern Recognition (CVPR)"、"Proceedings of ..."，被引数往往很大）——
    这类条目是出版物合集，不是论文，【必须从 Top 10 中排除，不占名额】，
    排除后继续往后补足 10 篇。
+   双重校验（S2 核查阶段）：若某条 S2 匹配结果同时满足 (a) 标题含
+   "Conference on" / "Proceedings of" 等会议名特征 + (b) S2 被引数远低于
+   GS 被引数（S2 < GS 的 1/10），则确认为会议条目而非论文，记 not_found 跳过。
 
 # 第二部分：Semantic Scholar 逐篇核查（对选出的每篇论文按顺序执行）
 
@@ -147,7 +150,15 @@ async (page) => {
 }
 ```
 
-   从正文读出 Cited by（被引数）、DOI、期刊/来源名称、发表年份；正文没有的字段填 null。
+   提取字段：
+   - **DOI**（重点）：先查正文中 "DOI:" / "doi.org/" 标记；正文无则从 page.url()
+     匹配 DOI 正则 `/10\.\d{4,}/`。正式发表论文必有 DOI，只有预印本/工作论文才填 null。
+   - **期刊/来源名称**：只填正式发表期刊名（如 "Nature Communications"），
+     【禁止】填 "arXiv.org" / "arXiv preprint" / "SSRN" / "ResearchGate" 等预印本/平台名。
+     若仅有预印本版本，填 null。
+   - **Cited by**：页面顶部引文计数（纯整数）。
+   - **发表年份**。
+   - 正文中确实没有的字段填 null。
    注意：Semantic Scholar 是 SPA 异步渲染，goto 返回不代表内容已加载，上面的代码
    已内置「正文太短就等待重试、中间刷新一次」逻辑，照抄即可。
    提取完后你仍在论文详情页，截图时就在当前页截。

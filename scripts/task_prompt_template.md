@@ -109,6 +109,10 @@ async (page) => {
    Pattern Recognition (CVPR)"、"Proceedings of ..."，被引数往往很大）——
    这类条目是出版物合集，不是论文，【必须从 Top 10 中排除，不占名额】，
    排除后继续往后补足 10 篇。
+   双重校验（核查阶段）：若某条 OpenAlex 匹配结果同时满足 (a) 标题含
+   "Conference on" / "Proceedings of" 等会议名特征 + (b) OpenAlex 被引数
+   远低于 GS 被引数（OA < GS 的 1/10），则确认为会议条目而非论文，
+   记 not_found 跳过。
 
 # 第二部分：OpenAlex 逐篇核查（对选出的每篇论文按顺序执行）
 
