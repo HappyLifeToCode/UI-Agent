@@ -93,11 +93,29 @@ def parse_trace(zip_path):
     return actions, ([t for t, _ in frames], [s for _, s in frames])
 
 
-def frame_at(frames, ts):
-    """ts 之前最近的一帧;没有则给最早一帧"""
+def frame_at(frames, ts, z=None, lookahead_ms=3000):
+    """ts 之前最近的一帧;没有则给最早一帧。
+    若取到的帧疑似空白(刚跳转未绘制,1280x800 白图 JPEG 约 2.7KB),
+    向后看 lookahead_ms 内第一张有内容的帧。"""
     times, names = frames
+    if not names:
+        return None
     i = bisect_right(times, ts) - 1
-    return names[max(i, 0)] if names else None
+    name = names[max(i, 0)]
+    if z is not None:
+        size = z.getinfo(f"resources/{name}").file_size
+        if size < 8000:
+            # 窗口内取体积最大的一帧(内容渲染最充分),而不是第一张过阈值的
+            best, best_size = None, 0
+            for j in range(max(i, 0) + 1, len(times)):
+                if times[j] - ts > lookahead_ms:
+                    break
+                cand_size = z.getinfo(f"resources/{names[j]}").file_size
+                if cand_size > best_size:
+                    best, best_size = names[j], cand_size
+            if best is not None and best_size >= 8000:
+                return best
+    return name
 
 
 def match_actions(wire_actions, trace_actions):
@@ -147,7 +165,7 @@ def extract(task_dir):
         for wa in alignment["actions"]:
             ta = matched[wa["seq"]]
             if ta is not None:
-                frame_name = frame_at(frames, ta["end"])
+                frame_name = frame_at(frames, ta["end"], z)
                 last_frame = frame_name or last_frame
             else:
                 frame_name = last_frame

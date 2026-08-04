@@ -47,11 +47,20 @@ def build_steps(task_dir):
                     cur["text"].append(part["text"])
             elif e["type"] == "tool.call" and cur is not None:
                 a = by_call_id.get(e["toolCallId"])
+                frame = None
+                if a:
+                    # 截图动作优先用契约 PNG(fullPage 整页,比视口帧清晰)
+                    if a["tool"] == "take_screenshot":
+                        png = a["args"].get("filename")
+                        if png and (task_dir / "screenshots" / png).exists():
+                            frame = "screenshots/" + png
+                    if frame is None and frame_by_seq.get(a["seq"]):
+                        frame = "frames/" + frame_by_seq[a["seq"]]
                 cur["calls"].append({
                     "tool": a["tool"] if a else e["name"],
                     "args": a["args"] if a else e.get("args", {}),
                     "result": (a["result_summary"] if a else "") or "",
-                    "frame": (frame_by_seq.get(a["seq"]) if a else None),
+                    "frame": frame,
                 })
             elif e["type"] == "step.end" and cur is not None:
                 steps.append({
@@ -84,9 +93,12 @@ body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;height:100vh;display:f
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #steps .item:hover{background:#eef2ff}
 #steps .item.active{background:var(--accent);color:#fff}
-#center{flex:1.1;overflow-y:auto;padding:20px 24px;min-width:420px}
-#right{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
-#right img{max-width:100%;box-shadow:0 2px 14px rgba(0,0,0,.22);border-radius:4px;background:#fff}
+#center{flex:0.9;overflow-y:auto;padding:20px 24px;min-width:380px}
+#right{flex:1.4;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+#right img{max-width:100%;box-shadow:0 2px 14px rgba(0,0,0,.22);border-radius:4px;background:#fff;cursor:zoom-in}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:flex-start;
+  justify-content:center;overflow:auto;z-index:20;cursor:zoom-out}
+#overlay img{max-width:96%;margin:20px auto;display:block;background:#fff}
 .nav{display:flex;gap:8px;align-items:center;margin-bottom:14px;position:sticky;top:0;
   background:var(--bg);padding:6px 0;z-index:5}
 button{padding:6px 14px;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:#fff}
@@ -112,7 +124,8 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-famil
   </div>
   <div id="content"></div>
 </div>
-<div id="right"><img id="frame" alt=""></div>
+<div id="right"><img id="frame" alt="" onclick="zoom()"></div>
+<div id="overlay" onclick="this.style.display='none'"><img id="ovimg"></div>
 <script>
 const STEPS = __STEPS__;
 let i = 0;
@@ -146,20 +159,28 @@ function show(){
   if (!s.reasoning && !s.text && !s.calls.length) h = '<div class="empty">(本步无内容)</div>';
   $('content').innerHTML = h;
   const f = s.frame;
-  if (f){ $('frame').style.display=''; $('frame').src = 'frames/' + f; }
+  if (f){ $('frame').style.display=''; $('frame').src = f; }
   else $('frame').style.display='none';
 }
 function go(d){ i = Math.min(Math.max(i+d,0), STEPS.length-1); show(); }
 function jumpTo(v){ const j = STEPS.findIndex(s=>s.no==v); if(j>=0){i=j;show();} }
+function zoom(){
+  const img = $('frame');
+  if (!img.src || img.style.display==='none') return;
+  $('ovimg').src = img.src;  // 同一张 JPEG 原尺寸(1280x800)展示
+  $('overlay').style.display = 'flex';
+}
 document.addEventListener('keydown', e=>{
   if(e.target.tagName==='INPUT')return;
   if(e.key==='ArrowLeft')go(-1);
   if(e.key==='ArrowRight')go(1);
 });
-// 每步代表画面预计算
+// 每步代表画面预计算:取本步最后一个有帧的调用;整步无帧(非浏览器步)沿用前步
+let lastFrame = null;
 for (const s of STEPS){
   s.frame = null;
   for (let k = s.calls.length-1; k>=0; k--) if (s.calls[k].frame){ s.frame = s.calls[k].frame; break; }
+  if (s.frame) lastFrame = s.frame; else s.frame = lastFrame;
 }
 renderList(); show();
 </script></body></html>"""
