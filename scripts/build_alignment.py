@@ -133,7 +133,9 @@ if __name__ == "__main__":
     else:
         # 批量模式
         for task_dir in sorted(root.iterdir()):
-            if task_dir.is_dir() and (task_dir / "wire.jsonl").exists():
+            # 只处理 task_* 目录;web_* 是演示系统产物,不做索引
+            if (task_dir.is_dir() and task_dir.name.startswith("task_")
+                    and (task_dir / "wire.jsonl").exists()):
                 try:
                     alignment = build(task_dir)
                     out = task_dir / "alignment.json"

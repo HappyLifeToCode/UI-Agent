@@ -216,7 +216,9 @@ if __name__ == "__main__":
         # 批量模式:python scripts/wire2messages.py data/
         samples, dropped = [], []
         for task_dir in sorted(root.iterdir()):
-            if task_dir.is_dir() and (task_dir / "wire.jsonl").exists():
+            # 只处理 task_* 目录;web_* 是演示系统现场采集的产物,不入训练集
+            if (task_dir.is_dir() and task_dir.name.startswith("task_")
+                    and (task_dir / "wire.jsonl").exists()):
                 try:
                     s = convert(task_dir)
                     if s["meta"]["aligned"]:
