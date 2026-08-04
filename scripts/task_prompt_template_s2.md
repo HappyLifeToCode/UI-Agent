@@ -8,7 +8,7 @@
 - 禁止用 Bash / curl 请求网页；不要用 cp/mv 移动截图文件（外层执行器统一归档）。
 - 每次 run_code 的 return 只返回需要的字段，控制在 2000 字符以内。
 
-# 任务：谷歌学术人物检索 + OpenAlex 论文核查
+# 任务：谷歌学术人物检索 + Semantic Scholar 论文核查
 
 - task_id：{{TASK_ID}}
 - 目标人物：{{PERSON_NAME}}
@@ -105,16 +105,16 @@ async (page) => {
    某一页最后一行年份 < 2021 即可停止；否则 cstart 改为 100、200… 继续翻页。
    汇总所有 2021 年及以后的论文，按被引数降序取前 10 篇（不足 10 篇有几篇取几篇）。
 
-# 第二部分：OpenAlex 逐篇核查（对选出的每篇论文按顺序执行）
+# 第二部分：Semantic Scholar 逐篇核查（对选出的每篇论文按顺序执行）
 
 8. 打开搜索结果页并提取前 5 条（URL 中空格替换为 %20，标题中的问号等标点去掉）：
 
 ```js
 async (page) => {
-  await page.goto('https://openalex.org/works?search=<论文标题>');
-  await page.waitForSelector('a[href*="/works/w" i]', { timeout: 15000 }).catch(() => {});
+  await page.goto('https://www.semanticscholar.org/search?q=<论文标题>&sort=relevance');
+  await page.waitForSelector('a[href*="/paper/"]', { timeout: 15000 }).catch(() => {});
   return await page.evaluate(() =>
-    [...document.querySelectorAll('a[href*="/works/w" i]')]
+    [...document.querySelectorAll('a[href*="/paper/"]')]
       .map(a => ({ title: a.innerText.trim(), url: a.href }))
       .filter(x => x.title.length > 10)
       .slice(0, 5));
@@ -122,7 +122,7 @@ async (page) => {
 ```
 
    匹配规则：忽略大小写、标点、冒号差异，标题核心词一致即算同一篇；
-   多条记录（arXiv/SSRN/正式版）取第一条匹配结果。
+   多条记录取第一条匹配结果。
    提取为空时先 return document.body.innerText.slice(0, 1500) 看正文：
    正文里有论文条目就是选择器失效，改从正文提取；正文里也没有才判 not_found。
 
@@ -130,7 +130,7 @@ async (page) => {
 
 ```js
 async (page) => {
-  await page.goto('https://openalex.org/works/<论文的works ID>');
+  await page.goto('https://www.semanticscholar.org/paper/<论文URL>');
   let text = '';
   for (let i = 0; i < 3; i++) {
     await page.waitForTimeout(2000 + i * 2000);
@@ -142,19 +142,20 @@ async (page) => {
 }
 ```
 
-   从正文读出 Cited by、DOI、期刊/来源名称、发表年份；正文没有的字段填 null。
-   注意：OpenAlex 是异步渲染，goto 返回不代表内容已加载，上面的代码
+   从正文读出 Cited by（被引数）、DOI、期刊/来源名称、发表年份；正文没有的字段填 null。
+   注意：Semantic Scholar 是 SPA 异步渲染，goto 返回不代表内容已加载，上面的代码
    已内置「正文太短就等待重试、中间刷新一次」逻辑，照抄即可。
+   提取完后你仍在论文详情页，截图时就在当前页截。
 
 10. 截图前【必须确认页面已渲染出内容】：用 browser_run_code 检查
     `document.body.innerText.length`，大于 1000 才截图；
     不足 1000 说明页面还是空白，先 `page.reload()` 等 3 秒再检查，
     最多重试 2 次。仍空白才允许截图（并在 result.json 的 note 说明
     该篇页面未渲染）。【严禁把空白页当作留证截图直接交差】。
-    截图：browser_take_screenshot，fullPage=true，
+    截图：browser_take_screenshot，fullPage=false（只截当前首屏），
     filename={{TASK_ID}}_paper_NN.png（NN 为两位编号 01~10，与 rank 一致；
-    matched 截详情页，not_found 截搜索结果页留证，同样占一个编号）。
-    然后继续下一篇，直到 10 篇全部核查完。
+    matched 在详情页截，not_found 在搜索结果页截，同样占一个编号）。
+    然后继续下一篇。Semantic Scholar 无反爬，不等待不滚动，连续操作。
 
 # 第三部分：写入结果
 
@@ -179,9 +180,9 @@ async (page) => {
       "year": "2024",
       "gs_citations": 0,
       "match_status": "matched",
-      "openalex_id": "W123456789",
-      "openalex_url": "https://openalex.org/works/W123456789",
-      "openalex_citations": 0,
+      "s2_id": "CorpusId或paper hash",
+      "s2_url": "https://www.semanticscholar.org/paper/xxxx",
+      "s2_citations": 0,
       "doi": "10.xxxx/xxxx",
       "journal": "期刊或来源名称",
       "screenshot": "{{TASK_ID}}_paper_01.png"
@@ -194,24 +195,27 @@ async (page) => {
 
 字段规则：
 - recent_papers 按谷歌学术被引数降序，rank 从 1 连续编号，截图编号 = rank 两位数字。
-- match_status ∈ matched / not_found。matched 必须填真实 OpenAlex 数据
-  （openalex_id、openalex_url、openalex_citations、doi、journal）；
+- match_status ∈ matched / not_found。matched 必须填真实 Semantic Scholar 数据
+  （s2_id、s2_url、s2_citations、doi、journal）；
   not_found 这五字段填 null，但 screenshot 必须有对应留证截图。
 - 数值字段（total_citations、h_index、i10_index、citations、gs_citations、
-  openalex_citations）必须是纯整数：去逗号、去单位。year 保留为字符串。
+  s2_citations）必须是纯整数：去逗号、去单位。year 保留为字符串。
 
-# 反爬节奏（仅谷歌学术部分，必须执行；OpenAlex 部分不需要）
+# 反爬节奏（仅谷歌学术部分，必须执行；Semantic Scholar 部分不需要）
 
 - 每次 page.goto 或点击之前，先用 browser_wait_for 等 2~5 秒（time 参数，
   每次取区间内不同的值）；第 4 步的点击代码里已内置等待，不重复。
 - 页面加载后、下一步操作前，用 browser_run_code 执行
   `await page.evaluate(() => window.scrollBy(0, 300 + Math.floor(Math.random() * 400)))`。
-- OpenAlex 部分不要等待、不要滚动，按「搜索页 → 详情页 → 截图」连续操作。
+- Semantic Scholar 部分不要等待、不要滚动，按「搜索页 → 详情页 → 截图」连续操作。
 
 # 异常处理
 
-- 遇到 CAPTCHA / 人机验证 / "unusual traffic"：不要绕过。status 写 "captcha"，
-  note 说明情况，结束任务。
+- 遇到 CAPTCHA / 人机验证 / "unusual traffic"：
+  如果浏览器可见（非 headless），等待 60 秒让用户手动完成验证，
+  每 15 秒用 browser_snapshot 检查一次页面是否已过验证，
+  验证通过后继续任务。60 秒后仍未通过才写 status "captcha" 结束。
+  如果看不到浏览器（headless），直接写 "captcha" 结束。
 - 确实找不到该人物的作者主页：status 写 "not_found"，其余字段尽力填写，结束任务。
 - 单篇论文核查出问题：该篇记 not_found 并在 note 说明，继续下一篇，
   不要中断任务，不要提前写 result.json。

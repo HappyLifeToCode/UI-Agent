@@ -1,26 +1,57 @@
-# Kimi Code 多模型配置参考 — Qwen3.5-27B via SiliconFlow
+# Kimi Code 多模型配置参考 — Qwen3.5 / Qwen3.6 via SiliconFlow
 # ============================================================
-# 使用方法：将下面两个 [providers] 和 [models] 段落追加到
-# ~/.kimi-code/config.toml 末尾（不要覆盖已有的 Kimi 配置），
-# 然后修改文件第一行 default_model 即可切换。
+# 使用方法：选择下面一个 [models] 段落追加到 ~/.kimi-code/config.toml
+# 末尾（不要覆盖已有的 Kimi 配置），然后改第一行 default_model 切换。
+# provider 和 loop_control 只需配一次。
 #
-# 切换为 Qwen：
+# 切换为 Qwen3.6（推荐）：
+#   default_model = "qwen-maas/Qwen/Qwen3.6-27B"
+# 切换为 Qwen3.5：
 #   default_model = "qwen-maas/Qwen/Qwen3.5-27B"
-#
 # 切回 Kimi K3：
 #   default_model = "kimi-for-coding/k3"
 #
 # 改完重启 Kimi Code 生效。
+#
+# 【为什么推荐 Qwen3.6-27B 而非 Qwen3.5-27B】
+#   - Qwen3.6 是更新代际，3 个 tasks 全部一次跑通（10/10 matched）
+#   - Qwen3.5 在长链工具调用中偶有不写 result.json 的情况
+#   - Qwen3.6 配合 thinking=medium + max_output_size=8192 + reserved=32K，
+#     上下文增长更慢，compaction 429 概率显著降低
+#   - 如果你已经配好了 Qwen3.5 且工作正常，也无需切换
+#
+# 【小模型必读】max_context_size 必须填模型真实值（256K），
+#   reserved_context_size 必须显式调小，否则 compaction 提前触发 → 429。
+#   详见 docs/models.md。
 
 [providers.qwen-maas]
 type = "openai"
 api_key = "你的硅基流动 API Key"
 base_url = "https://api.siliconflow.cn/v1"
 
+# ---------- Qwen3.6-27B（推荐）----------
+[models."qwen-maas/Qwen/Qwen3.6-27B"]
+provider = "qwen-maas"
+model = "Qwen/Qwen3.6-27B"
+max_context_size = 262144
+max_output_size = 8192
+capabilities = ["image_in", "thinking", "tool_use"]
+display_name = "Qwen3.6 27B"
+
+# ---------- Qwen3.5-27B ----------
 [models."qwen-maas/Qwen/Qwen3.5-27B"]
 provider = "qwen-maas"
 model = "Qwen/Qwen3.5-27B"
-max_context_size = 131072
+max_context_size = 262144
 max_output_size = 8192
 capabilities = ["image_in", "thinking", "tool_use"]
 display_name = "Qwen3.5 27B"
+
+[loop_control]
+# compaction 触发点 = max_context_size - reserved_context_size
+# Qwen3.6 建议 32768（256K-32K=224K 触发），Qwen3.5 建议 16384
+reserved_context_size = 32768
+
+[thinking]
+enabled = true
+effort = "medium"

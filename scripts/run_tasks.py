@@ -330,6 +330,23 @@ def read_status(task_dir: Path) -> str:
         return "invalid_result"
 
 
+def log_has_rate_limit(task_id: str) -> bool:
+    """执行日志中是否出现 API 限流迹象（429 / RateLimit）。
+
+    典型故障：小模型上下文打满触发 compaction，而 compaction 请求被
+     provider 限流（429）时 Kimi Code 直接中止整个会话（returncode=1），
+    日志末尾出现 'compaction.failed: APIProviderRateLimitError: 429'。
+    """
+    log_path = LOG_DIR / f"{task_id}.log"
+    if not log_path.exists():
+        return False
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return "429" in text or "RateLimit" in text
+
+
 def annotate_run_info(task_dir: Path, session_id, start_time, end_time):
     """任务跑完后把执行元信息补写进 result.json 的 _run 字段。
 
@@ -381,6 +398,8 @@ def derive_failure_reason(task_dir: Path, status: str, returncode: int):
         return "任务超时（45 分钟）"
     if returncode == -2:
         return "CLI 执行异常"
+    if returncode != 0 and log_has_rate_limit(task_dir.name):
+        return "API 限流（429）导致会话中止"
     if status == "no_result":
         return "Agent 未写入 result.json"
     if status == "invalid_result":
@@ -614,6 +633,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只打印命令不执行")
     parser.add_argument("--no-delay", action="store_true", help="禁用反爬延迟（测试用）")
     parser.add_argument("--max-captcha-retry", type=int, default=2, help="CAPTCHA 最大重试次数")
+    parser.add_argument("--max-429-retry", type=int, default=2,
+                        help="API 限流（429）导致会话中止时的最大重试次数（默认 2，冷却 2-5 分钟）")
     parser.add_argument("--max-consecutive-captcha", type=int, default=2,
                         help="连续 N 个任务 CAPTCHA 未解除则熔断终止批次（默认 2）")
     parser.add_argument("--model", help="指定模型（覆盖环境变量 AGENT_MODEL 和默认值）")
@@ -665,6 +686,20 @@ def main():
         for i, task in enumerate(tasks_to_run):
             # 执行任务 [M8]
             record = run_one_task(task)
+
+            # 429 限流重试：CLI 因限流中止（日志含 429 / RateLimit，
+            # 常见于小模型 compaction 请求被限流）时，冷却 2-5 分钟后重跑。
+            # 限流是临时性故障，重跑成本低，与 CAPTCHA 的长冷却分开处理。
+            retry_429 = 0
+            while (record["returncode"] != 0
+                   and log_has_rate_limit(task["task_id"])
+                   and retry_429 < args.max_429_retry):
+                retry_429 += 1
+                delay = random.uniform(120, 300)
+                print(f"[429] 检测到 API 限流导致会话中止，冷却 {delay/60:.0f} 分钟后重试 "
+                      f"({retry_429}/{args.max_429_retry})...")
+                time.sleep(delay)
+                record = run_one_task(task)
 
             # 统计结果
             if record["status"] == "success":
