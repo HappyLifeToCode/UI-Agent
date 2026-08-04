@@ -104,6 +104,11 @@ async (page) => {
 
    某一页最后一行年份 < 2021 即可停止；否则 cstart 改为 100、200… 继续翻页。
    汇总所有 2021 年及以后的论文，按被引数降序取前 10 篇（不足 10 篇有几篇取几篇）。
+   【只统计单篇论文】：谷歌学术有时把整本会议论文集/期刊整期当作一个条目
+   挂在作者名下（标题形如 "2024 IEEE/CVF Conference on Computer Vision and
+   Pattern Recognition (CVPR)"、"Proceedings of ..."，被引数往往很大）——
+   这类条目是出版物合集，不是论文，【必须从 Top 10 中排除，不占名额】，
+   排除后继续往后补足 10 篇。
 
 # 第二部分：Semantic Scholar 逐篇核查（对选出的每篇论文按顺序执行）
 
@@ -130,7 +135,7 @@ async (page) => {
 
 ```js
 async (page) => {
-  await page.goto('https://www.semanticscholar.org/paper/<论文URL>');
+  await page.goto('<第 8 步返回结果里该论文的完整 url，原样使用，不要拼接>');
   let text = '';
   for (let i = 0; i < 3; i++) {
     await page.waitForTimeout(2000 + i * 2000);
@@ -155,7 +160,9 @@ async (page) => {
     截图：browser_take_screenshot，fullPage=false（只截当前首屏），
     filename={{TASK_ID}}_paper_NN.png（NN 为两位编号 01~10，与 rank 一致；
     matched 在详情页截，not_found 在搜索结果页截，同样占一个编号）。
-    然后继续下一篇。Semantic Scholar 无反爬，不等待不滚动，连续操作。
+    然后继续下一篇。Semantic Scholar 部分不等待、不滚动，
+    按「搜索页 → 详情页 → 截图」连续操作（但注意：S2 有 DataDome 反爬，
+    若触发人机验证，按文末异常处理执行，不要硬冲）。
 
 # 第三部分：写入结果
 
@@ -213,8 +220,9 @@ async (page) => {
 
 - 遇到 CAPTCHA / 人机验证 / "unusual traffic"：
   如果浏览器可见（非 headless），等待 60 秒让用户手动完成验证，
-  每 15 秒用 browser_snapshot 检查一次页面是否已过验证，
-  验证通过后继续任务。60 秒后仍未通过才写 status "captcha" 结束。
+  每 15 秒用 browser_run_code 检查一次页面是否已过验证
+  （返回 `({ url: page.url(), text: (await page.evaluate(() => document.body.innerText.slice(0, 500))) })`，
+  正文恢复正常即通过），验证通过后继续任务。60 秒后仍未通过才写 status "captcha" 结束。
   如果看不到浏览器（headless），直接写 "captcha" 结束。
 - 确实找不到该人物的作者主页：status 写 "not_found"，其余字段尽力填写，结束任务。
 - 单篇论文核查出问题：该篇记 not_found 并在 note 说明，继续下一篇，

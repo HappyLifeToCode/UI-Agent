@@ -638,12 +638,26 @@ def main():
     parser.add_argument("--max-consecutive-captcha", type=int, default=2,
                         help="连续 N 个任务 CAPTCHA 未解除则熔断终止批次（默认 2）")
     parser.add_argument("--model", help="指定模型（覆盖环境变量 AGENT_MODEL 和默认值）")
+    parser.add_argument("--template",
+                        help="prompt 模板文件名（默认 task_prompt_template.md；"
+                             "相对 scripts/ 目录或绝对路径，如 task_prompt_template_s2.md）")
     args = parser.parse_args()
 
     # 应用命令行参数中的模型设置
-    global MODEL
+    global MODEL, TEMPLATE_PATH
     if args.model:
         MODEL = args.model
+
+    # 应用命令行参数中的 prompt 模板（默认 scripts/task_prompt_template.md；
+    # 如 S2 链路用 scripts/task_prompt_template_s2.md）
+    if args.template:
+        t = Path(args.template)
+        if not t.is_absolute():
+            t = PROJECT_ROOT / "scripts" / t
+        if not t.exists():
+            print(f"[ERROR] 找不到 prompt 模板: {t}")
+            return
+        TEMPLATE_PATH = t
 
     # 加载任务列表
     tasks_path = PROJECT_ROOT / "tasks" / "tasks.jsonl"
@@ -662,7 +676,7 @@ def main():
         tasks_to_run = tasks_to_run[:args.limit]
 
     print(f"[启动] 共 {len(tasks_to_run)} 条任务待执行")
-    print(f"[配置] 框架={FRAMEWORK} | 模型={MODEL} | 反爬延迟={'关闭' if args.no_delay else '开启'}")
+    print(f"[配置] 框架={FRAMEWORK} | 模型={MODEL} | 模板={TEMPLATE_PATH.name} | 反爬延迟={'关闭' if args.no_delay else '开启'}")
     check_mcp_config()  # [M9] 跑批前自检反检测配置（只警告不阻断）
 
     if args.dry_run:
