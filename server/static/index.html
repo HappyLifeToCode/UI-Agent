@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scholar Agent 演示</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search-bar input { padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  #name { flex: 2; }
+  #aff { flex: 1; }
+  .search-bar button { padding: 10px 20px; border: none; border-radius: 6px; background: #1a73e8; color: #fff; font-size: 14px; cursor: pointer; }
+  .search-bar button:disabled { background: #9ab8e0; cursor: wait; }
+  #status { padding: 12px 16px; border-radius: 6px; background: #fff; border: 1px solid #e0e0e0; margin-bottom: 16px; font-size: 14px; display: none; white-space: pre-wrap; }
+  #status.running { border-left: 4px solid #1a73e8; }
+  #status.done { border-left: 4px solid #34a853; }
+  #status.failed { border-left: 4px solid #ea4335; }
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 17px; margin-bottom: 12px; }
+  .author-name { font-size: 22px; font-weight: 600; }
+  .author-aff { color: #555; margin: 4px 0 8px; }
+  .tags span { display: inline-block; background: #e8f0fe; color: #1a73e8; border-radius: 12px; padding: 2px 10px; font-size: 12px; margin: 2px 4px 2px 0; }
+  .metrics { display: flex; gap: 24px; margin-top: 12px; }
+  .metric { text-align: center; }
+  .metric .num { font-size: 20px; font-weight: 600; }
+  .metric .label { font-size: 12px; color: #777; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { color: #777; font-weight: 500; white-space: nowrap; }
+  .badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+  .badge.matched { background: #e6f4ea; color: #137333; }
+  .badge.not_found { background: #fce8e6; color: #c5221f; }
+  a { color: #1a73e8; text-decoration: none; }
+  .shot-link { white-space: nowrap; }
+  .profile-img { width: 100%; border: 1px solid #ddd; border-radius: 6px; cursor: zoom-in; }
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; align-items: flex-start; justify-content: center; overflow: auto; z-index: 10; }
+  #overlay img { max-width: 95%; margin: 24px auto; display: block; background: #fff; }
+  .cached-note { font-size: 12px; color: #777; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Scholar Agent 人物检索演示</h1>
+  <div class="search-bar">
+    <input id="name" placeholder="人物姓名，如 Yann LeCun" autofocus>
+    <input id="aff" placeholder="单位线索（可选）">
+    <button id="btn" onclick="doSearch()">搜索</button>
+  </div>
+  <div id="status"></div>
+  <div id="result"></div>
+</div>
+<div id="overlay" onclick="this.style.display='none'"><img id="overlay-img"></div>
+
+<script>
+let pollTimer = null;
+
+function showStatus(state, text) {
+  const el = document.getElementById('status');
+  el.style.display = text ? 'block' : 'none';
+  el.className = state || '';
+  el.textContent = text || '';
+}
+
+async function doSearch() {
+  const name = document.getElementById('name').value.trim();
+  const aff = document.getElementById('aff').value.trim();
+  if (!name) return;
+  document.getElementById('btn').disabled = true;
+  document.getElementById('result').innerHTML = '';
+  clearInterval(pollTimer);
+  showStatus('running', '提交中…');
+  try {
+    const resp = await fetch('/api/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({person_name: name, affiliation_hint: aff})
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+    const data = await resp.json();
+    if (data.cached) {
+      showStatus('done', '已采集过该人物，直接展示缓存结果。');
+      await loadResult(data.task_id, true);
+      document.getElementById('btn').disabled = false;
+    } else {
+      pollTimer = setInterval(() => poll(data.task_id), 3000);
+      poll(data.task_id);
+    }
+  } catch (e) {
+    showStatus('failed', '提交失败：' + e.message);
+    document.getElementById('btn').disabled = false;
+  }
+}
+
+async function poll(taskId) {
+  try {
+    const resp = await fetch('/api/status/' + taskId);
+    const s = await resp.json();
+    showStatus(s.state === 'done' ? 'done' : (s.state === 'failed' ? 'failed' : 'running'), s.detail);
+    if (s.state === 'done') {
+      clearInterval(pollTimer);
+      await loadResult(taskId, false);
+      document.getElementById('btn').disabled = false;
+    } else if (s.state === 'failed') {
+      clearInterval(pollTimer);
+      document.getElementById('btn').disabled = false;
+    }
+  } catch (e) { /* 网络抖动，下轮再试 */ }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function shotUrl(taskId, filename) { return '/shots/' + taskId + '/' + filename; }
+
+async function loadResult(taskId, fromCache) {
+  const resp = await fetch('/api/result/' + taskId);
+  if (!resp.ok) { showStatus('failed', '读取结果失败'); return; }
+  const r = await resp.json();
+
+  let html = '';
+  if (fromCache && r._run && r._run.start_time) {
+    html += `<div class="cached-note">来自缓存，采集于 ${esc(r._run.start_time)}（模型 ${esc(r._run.model)}）</div>`;
+  }
+
+  // 作者卡片
+  html += `<div class="card">
+    <div class="author-name">${esc(r.person_name)}</div>
+    <div class="author-aff">${esc(r.affiliation || '')}</div>
+    <div class="tags">${(r.interests || []).map(t => `<span>${esc(t)}</span>`).join('')}</div>
+    <div class="metrics">
+      <div class="metric"><div class="num">${esc(r.total_citations)}</div><div class="label">总被引</div></div>
+      <div class="metric"><div class="num">${esc(r.h_index)}</div><div class="label">h-index</div></div>
+      <div class="metric"><div class="num">${esc(r.i10_index)}</div><div class="label">i10-index</div></div>
+    </div>
+    ${r.profile_url ? `<div style="margin-top:8px"><a href="${esc(r.profile_url)}" target="_blank">谷歌学术主页 ↗</a></div>` : ''}
+  </div>`;
+
+  // 主页截图
+  const profileShot = `${taskId}_profile.png`;
+  html += `<div class="card"><h2>作者主页截图</h2>
+    <img class="profile-img" src="${shotUrl(taskId, profileShot)}" onerror="this.parentElement.style.display='none'"
+         onclick="zoom(this.src)">
+  </div>`;
+
+  // 代表作
+  if (r.top_papers && r.top_papers.length) {
+    html += `<div class="card"><h2>代表作（被引 Top ${r.top_papers.length}）</h2><table>
+      <tr><th>标题</th><th>年份</th><th>被引</th></tr>
+      ${r.top_papers.map(p => `<tr><td>${esc(p.title)}</td><td>${esc(p.year)}</td><td>${esc(p.citations)}</td></tr>`).join('')}
+    </table></div>`;
+  }
+
+  // 近五年论文核查
+  if (r.recent_papers && r.recent_papers.length) {
+    const ext = r.recent_papers[0].openalex_id !== undefined ? 'openalex' : 's2';
+    html += `<div class="card"><h2>近五年被引 Top ${r.recent_papers.length}（逐篇核查）</h2><table>
+      <tr><th>#</th><th>标题</th><th>年份</th><th>GS 被引</th><th>核查</th><th>${ext === 'openalex' ? 'OpenAlex' : 'S2'} 被引</th><th>来源 / DOI</th><th>截图</th></tr>
+      ${r.recent_papers.map(p => {
+        const extCitations = ext === 'openalex' ? p.openalex_citations : p.s2_citations;
+        const extUrl = ext === 'openalex' ? p.openalex_url : p.s2_url;
+        return `<tr>
+          <td>${esc(p.rank)}</td>
+          <td>${esc(p.title)}</td>
+          <td>${esc(p.year)}</td>
+          <td>${esc(p.gs_citations)}</td>
+          <td><span class="badge ${esc(p.match_status)}">${esc(p.match_status)}</span></td>
+          <td>${extUrl ? `<a href="${esc(extUrl)}" target="_blank">${esc(extCitations ?? '-')}</a>` : '-'}</td>
+          <td>${esc(p.journal || '')}${p.doi ? `<br><a href="https://doi.org/${esc(p.doi)}" target="_blank">${esc(p.doi)}</a>` : ''}</td>
+          <td>${p.screenshot ? `<a class="shot-link" href="${shotUrl(taskId, p.screenshot)}" target="_blank">查看</a>` : '-'}</td>
+        </tr>`;
+      }).join('')}
+    </table></div>`;
+  }
+
+  document.getElementById('result').innerHTML = html;
+}
+
+function zoom(src) {
+  document.getElementById('overlay-img').src = src;
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+document.getElementById('name').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+</script>
+</body>
+</html>
