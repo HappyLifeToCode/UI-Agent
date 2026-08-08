@@ -73,8 +73,41 @@ def build_steps(task_dir):
     return steps
 
 
+def assign_frames(steps):
+    """给每步配右侧画面:本步思考时 Agent 正看着的页面。
+
+    步序结构是「思考 → 工具调用 → step.end → 工具返回 → 下一步思考」,
+    所以第 N 步的思考评论的是第 N-1 步动作完成后的页面——画面必须取
+    上一个浏览器动作的稳定帧,不能取本步动作的结果帧(否则思考永远
+    比画面快一步)。规则:
+    - 本步有 take_screenshot:直接用契约 PNG(截图不改变页面,PNG 就是
+      当前状态,且 fullPage 比视口帧清晰);
+    - 本步只有变更类动作:用上一个动作的稳定帧(本步动作的结果属于
+      下一步的画面);
+    - 首个浏览器动作步(无历史帧):退回用本步动作的稳定帧。
+    """
+    last = None  # 截至上一步的浏览器稳定画面
+    for s in steps:
+        png = None
+        settled = None
+        for c in s["calls"]:
+            f = c.get("frame")
+            if not f:
+                continue
+            if f.startswith("screenshots/"):
+                png = f
+            else:
+                settled = f  # 本步最后一个动作的稳定帧
+        s["frame"] = png or last or settled
+        if settled:
+            last = settled
+        if png:
+            last = png
+    return steps
+
+
 def step_frame(step):
-    """本步代表画面:取最后一个有帧的工具调用"""
+    """本步代表画面:取最后一个有帧的工具调用(已废弃,逻辑见 assign_frames)"""
     for c in reversed(step["calls"]):
         if c["frame"]:
             return c["frame"]
@@ -211,13 +244,9 @@ document.addEventListener('keydown', e=>{
   if(e.key==='ArrowLeft')go(-1);
   if(e.key==='ArrowRight')go(1);
 });
-// 每步代表画面预计算:取本步最后一个有帧的调用;整步无帧(非浏览器步)沿用前步
-let lastFrame = null;
-for (const s of STEPS){
-  s.frame = null;
-  for (let k = s.calls.length-1; k>=0; k--) if (s.calls[k].frame){ s.frame = s.calls[k].frame; break; }
-  if (s.frame) lastFrame = s.frame; else s.frame = lastFrame;
-}
+// 每步代表画面由 build_replay.py 的 assign_frames 在生成时预计算
+// (本步思考所见页面 = 上一个动作的稳定帧;截图动作用契约 PNG),
+// 前端直接使用 s.frame,不再自行顺延。
 // 智能返回:从列表页来的回退(保留筛选状态),直接打开的跳 /review
 function goBack(){
   if (document.referrer && document.referrer.indexOf('/review') >= 0
@@ -233,7 +262,7 @@ renderList(); show();
 def build(task_dir):
     task_dir = Path(task_dir)
     task_id = task_dir.name
-    steps = build_steps(task_dir)
+    steps = assign_frames(build_steps(task_dir))
     html = (HTML_TEMPLATE
             .replace("__TITLE__", task_id)
             .replace("__STEPS__", json.dumps(steps, ensure_ascii=False)))

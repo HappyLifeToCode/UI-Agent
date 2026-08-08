@@ -4,7 +4,8 @@
 - trace.trace 里 before/after 事件按 callId 配对,带 class/method/params/
   startTime/endTime;screencast-frame 事件引用 resources/ 里的 JPEG 帧
   (带时间戳),整个会话被逐帧记录;
-- 动作的对应画面 = endTime 之前最近的一帧 screencast-frame;
+- 动作的对应画面 = 下一个动作开始前最近的一帧(动作生效后的稳定页面;
+  在 endTime 取帧会拿到生效前的旧页面,造成回放画面慢一步);
 - wire 动作 ↔ trace 动作按顺序匹配:工具名 → class.method 兼容表
   (实测自 task_0001);take_screenshot 用 params.path==filename 做强校验;
 - snapshot/tab_list 等纯读取类工具不产生 trace 动作,沿用前一动作的画面。
@@ -27,7 +28,7 @@ COMPAT = {
     "click": {"Frame.click"},
     "hover": {"Frame.hover"},
     "type": {"Frame.fill", "Frame.press", "Frame.type",
-             "Keyboard.press", "Keyboard.type"},
+             "Keyboard.press", "Keyboard.type", "Page.keyboardPress"},
     "take_screenshot": {"Page.screenshot"},
     "evaluate": {"Frame.evaluateExpression", "Frame.evaluate"},
     # run_code 执行任意 Playwright 代码,可能产生任何方法的动作(实测有点击):
@@ -39,6 +40,28 @@ INTERNAL = {"Page.requests", "Page.waitForEventInfo"}
 # 不产生 trace 动作的工具:沿用前一帧。
 # wait_for(time) 实测不产生 before/after 事件;snapshot/tab_* 是纯读取
 NO_TRACE = {"snapshot", "tab_list", "tab_select", "tab_close", "wait_for"}
+
+# run_code 代码文本 → 可解释的 trace 方法(用于吃掉一次 run_code 产生的
+# 全部连续 trace 动作,如 hover+waitForTimeout+click 组合)。
+# 方法名为 trace.trace 里的真实 class.method(实测自 task_0001 的 trace.zip)
+RUN_CODE_METHODS = [
+    ("page.goto", "Frame.goto"),
+    (".click(", "Frame.click"),
+    (".hover(", "Frame.hover"),
+    (".fill(", "Frame.fill"),
+    ("keyboard.press", "Page.keyboardPress"),
+    ("keyboard.type", "Page.keyboardType"),
+    ("page.evaluate", "Frame.evaluateExpression"),
+    ("page.evaluate", "Frame.evaluate"),
+    ("waitForTimeout", "Frame.waitForTimeout"),
+    ("waitForSelector", "Frame.waitForSelector"),
+    ("page.reload", "Page.reload"),
+]
+
+
+def code_allowed_methods(code: str) -> set:
+    """从 run_code 的代码文本推出它可能产生的 trace 方法集合。"""
+    return {m for key, m in RUN_CODE_METHODS if key in code}
 
 
 def key_ok(tool, wa_args, ta_params):
@@ -145,6 +168,15 @@ def match_actions(wire_actions, trace_actions):
                            and trace_actions[pos]["method"] in compat):
                         found = trace_actions[pos]
                         pos += 1
+                # run_code 一次调用可产生多个 trace 动作(如 hover+click 组合),
+                # 只匹配第一个会让后续动作连环错位;吃掉代码能解释的连续动作
+                if tool == "run_code":
+                    allowed = code_allowed_methods(wa["args"].get("code", ""))
+                    if allowed:
+                        while (pos < len(trace_actions)
+                               and trace_actions[pos]["method"] in allowed):
+                            found = trace_actions[pos]
+                            pos += 1
                 break
         result[wa["seq"]] = found
     return result
@@ -157,6 +189,19 @@ def extract(task_dir):
     trace_actions, frames = parse_trace(task_dir / "trace.zip")
     matched = match_actions(alignment["actions"], trace_actions)
 
+    # 每个动作的稳定时刻 = 下一个匹配到 trace 动作的开始时间
+    # （此时浏览器空闲、页面渲染完毕，代表本动作生效后的页面状态）。
+    # 直接在动作 endTime 取帧会拿到动作生效前的旧页面(点击/跳转的
+    # 视觉变化发生在 endTime 之后),这就是回放"画面慢一步"的来源。
+    seqs = [wa["seq"] for wa in alignment["actions"]]
+    matched_seqs = [s for s in seqs if matched[s] is not None]
+    settle_ts = {}
+    for i, s in enumerate(matched_seqs):
+        if i + 1 < len(matched_seqs):
+            settle_ts[s] = matched[matched_seqs[i + 1]]["start"] - 1
+        else:
+            settle_ts[s] = float("inf")  # 最后一个动作:取全程最后一帧
+
     frames_dir = task_dir / "frames"
     frames_dir.mkdir(exist_ok=True)
     out_actions = []
@@ -165,7 +210,9 @@ def extract(task_dir):
         for wa in alignment["actions"]:
             ta = matched[wa["seq"]]
             if ta is not None:
-                frame_name = frame_at(frames, ta["end"], z)
+                # z=None:稳定帧不做空白前瞻(向前看会越过 settle_ts
+                # 拿错下一个动作的帧; settle 语义下空白即真实空白)
+                frame_name = frame_at(frames, settle_ts[wa["seq"]])
                 last_frame = frame_name or last_frame
             else:
                 frame_name = last_frame
