@@ -139,7 +139,8 @@ body{font-family:"Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif;ma
 .brand h1{font-family:"Archivo Black",sans-serif;font-size:24px;text-transform:uppercase;line-height:1.1}
 .brand h1 em{color:var(--red);font-style:normal}
 .brand p{color:#8b8b90;font-size:11.5px;margin-top:8px;line-height:1.6}
-.brand a{color:#e8e8ea;font-size:12px}
+.brand a{color:#e8e8ea;font-size:12px;text-decoration:none}
+.brand a:hover{text-decoration:underline}
 #steps .list{margin-top:20px}
 #steps .item{padding:6px 9px;cursor:pointer;font-size:12.5px;margin-bottom:2px;color:#c9c9cf;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:2px solid transparent}
