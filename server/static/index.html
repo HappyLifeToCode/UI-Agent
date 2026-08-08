@@ -3,189 +3,501 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scholar Agent 演示</title>
+<title>SCHOLAR AGENT</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23e60012'/%3E%3Ctext x='16' y='23' font-family='Arial Black' font-size='19' font-weight='900' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --red: #e60012;
+    --red-dark: #b0000e;
+    --ink: #111114;
+    --paper: #f4f2ee;
+    --surface: #ffffff;
+    --line: #d8d4cc;
+    --text-2: #6b6560;
+    --ok: #0f7a3d;
+    --stripe: repeating-linear-gradient(-45deg, var(--red) 0 14px, transparent 14px 28px);
+    --stripe-thin: repeating-linear-gradient(-45deg, rgba(230,0,18,.14) 0 8px, transparent 8px 16px);
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; }
-  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 20px; margin-bottom: 16px; }
-  .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .search-bar input { padding: 10px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-  #name { flex: 2; }
-  #aff { flex: 1; }
-  .search-bar button { padding: 10px 20px; border: none; border-radius: 6px; background: #1a73e8; color: #fff; font-size: 14px; cursor: pointer; }
-  .search-bar button:disabled { background: #9ab8e0; cursor: wait; }
-  #status { padding: 12px 16px; border-radius: 6px; background: #fff; border: 1px solid #e0e0e0; margin-bottom: 16px; font-size: 14px; display: none; white-space: pre-wrap; }
-  #status.running { border-left: 4px solid #1a73e8; }
-  #status.done { border-left: 4px solid #34a853; }
-  #status.failed { border-left: 4px solid #ea4335; }
-  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-  .card h2 { font-size: 17px; margin-bottom: 12px; }
-  .author-name { font-size: 22px; font-weight: 600; }
-  .author-aff { color: #555; margin: 4px 0 8px; }
-  .tags span { display: inline-block; background: #e8f0fe; color: #1a73e8; border-radius: 12px; padding: 2px 10px; font-size: 12px; margin: 2px 4px 2px 0; }
-  .metrics { display: flex; gap: 24px; margin-top: 12px; }
-  .metric { text-align: center; }
-  .metric .num { font-size: 20px; font-weight: 600; }
-  .metric .label { font-size: 12px; color: #777; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased;
+  }
+  .display { font-family: "Archivo Black", "Inter", sans-serif; letter-spacing: .01em; }
+
+  /* ========== 左右布局 ========== */
+  .layout { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ========== 左侧控制面板(黑) ========== */
+  .side {
+    width: 400px; flex-shrink: 0; background: var(--ink); color: #fff;
+    padding: 36px 32px 48px; position: relative; overflow-x: hidden; overflow-y: auto;
+    height: 100vh;
+    display: flex; flex-direction: column; gap: 26px;
+  }
+  .side::before {  /* 顶部斜纹带 */
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 10px;
+    background: var(--stripe);
+  }
+  .brand { position: relative; }
+  .brand .slash {
+    display: inline-block; background: var(--red); color: #fff;
+    font-size: 13px; font-weight: 700; padding: 4px 12px;
+    transform: skew(-12deg); margin-bottom: 14px; letter-spacing: .2em;
+  }
+  .brand h1 {
+    font-family: "Archivo Black", sans-serif; font-size: 42px; line-height: 1.02;
+    text-transform: uppercase; letter-spacing: -0.01em;
+  }
+  .brand h1 em { color: var(--red); font-style: normal; }
+  .brand p { color: #8b8b90; font-size: 12.5px; margin-top: 12px; line-height: 1.7; }
+
+  .block-title {
+    display: inline-block; background: #fff; color: var(--ink);
+    font-weight: 700; font-size: 13px; padding: 5px 14px;
+    transform: skew(-12deg); letter-spacing: .12em; margin-bottom: 14px;
+  }
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 600; letter-spacing: .14em;
+    color: #9a9aa0; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .field input, .field select {
+    width: 100%; background: #1d1d22; border: 1px solid #33333a; color: #fff;
+    padding: 11px 13px; font-size: 14px; font-family: inherit; border-radius: 0;
+    outline: none; transition: border-color .15s;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  }
+  .field input:focus, .field select:focus { border-color: var(--red); }
+  .field input::placeholder { color: #55555c; }
+  .field select { appearance: none; cursor: pointer; }
+
+  #btn {
+    width: 100%; border: none; cursor: pointer; font-family: "Archivo Black", sans-serif;
+    background: var(--red); color: #fff; font-size: 17px; letter-spacing: .18em;
+    padding: 15px 0 13px; text-transform: uppercase;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+    transition: background .15s;
+  }
+  #btn:hover:not(:disabled) { background: var(--red-dark); }
+  #btn:disabled { background: #4a4a50; cursor: not-allowed; color: #9a9aa0; }
+
+  .side-foot { margin-top: auto; font-size: 11px; color: #55555c; line-height: 1.7; }
+
+  /* ========== 右侧内容区(浅) ========== */
+  .main { flex: 1; padding: 40px 44px 80px; position: relative; height: 100vh; overflow-y: auto; }
+  .main::before {  /* 顶部细斜纹 */
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 10px;
+    background: var(--stripe-thin);
+  }
+  .main-head { margin-bottom: 26px; }
+  .main-head .kick {
+    display: inline-block; background: var(--ink); color: #fff; font-size: 12px;
+    font-weight: 700; letter-spacing: .2em; padding: 4px 12px; transform: skew(-12deg);
+    margin-bottom: 12px;
+  }
+  .main-head h2 { font-family: "Archivo Black", sans-serif; font-size: 26px; text-transform: uppercase; }
+
+  .empty-hint { color: var(--text-2); font-size: 14px; line-height: 2; }
+  .empty-hint b { color: var(--ink); }
+
+  /* 状态卡 */
+  #status-card {
+    display: none; background: var(--surface); border: 1px solid var(--line);
+    padding: 20px 24px; margin-bottom: 22px; position: relative;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
+  }
+  #status-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--red); }
+  .steps { display: flex; align-items: center; margin-bottom: 12px; }
+  .step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b0aaa2; font-weight: 600; }
+  .step .dot {
+    width: 24px; height: 24px; background: var(--paper); color: #b0aaa2;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+    transform: skew(-12deg);
+  }
+  .step.active { color: var(--red); }
+  .step.active .dot { background: var(--red); color: #fff; }
+  .step.done { color: var(--ok); }
+  .step.done .dot { background: var(--ok); color: #fff; }
+  .step-line { flex: 1; height: 3px; background: var(--paper); margin: 0 12px; min-width: 20px; transform: skew(-30deg); }
+  .step-line.done { background: var(--ok); }
+  .status-detail { font-size: 13px; color: var(--text-2); line-height: 1.6; word-break: break-all; }
+  .status-detail .elapsed { color: #b0aaa2; margin-left: 8px; font-variant-numeric: tabular-nums; }
+  .status-error { color: var(--red); font-weight: 600; }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid #f3c1c6;
+    border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 结果区 */
+  #result > * + * { margin-top: 18px; }
+  .cached-note {
+    font-size: 12.5px; font-weight: 600; color: var(--ink);
+    background: #fff7d6; border-left: 6px solid #f5c800; padding: 10px 16px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); padding: 22px 26px;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
+  }
+  .card h3 {
+    font-family: "Archivo Black", sans-serif; font-size: 15px; text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+  }
+  .card h3::before { content: ""; width: 18px; height: 18px; background: var(--red); transform: skew(-12deg); flex-shrink: 0; }
+
+  .author-head { display: flex; gap: 16px; align-items: flex-start; }
+  .avatar {
+    width: 56px; height: 56px; background: var(--ink); color: #fff; flex-shrink: 0;
+    font-family: "Archivo Black", sans-serif; font-size: 24px;
+    display: flex; align-items: center; justify-content: center;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+  }
+  .author-name { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .author-aff { color: var(--text-2); font-size: 13px; margin-top: 4px; line-height: 1.6; }
+  a { color: var(--red); text-decoration: none; font-weight: 500; }
+  a:hover { text-decoration: underline; }
+  .author-link { font-size: 13px; margin-top: 6px; display: inline-block; }
+  .tags { margin-top: 12px; }
+  .tags span {
+    display: inline-block; background: var(--ink); color: #fff; font-size: 12px; font-weight: 500;
+    padding: 3px 10px; margin: 0 6px 6px 0; transform: skew(-8deg);
+  }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .metric { background: var(--paper); padding: 14px 0 12px; text-align: center; }
+  .metric .num { font-family: "Archivo Black", sans-serif; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .metric .label { font-size: 11px; color: var(--text-2); letter-spacing: .12em; text-transform: uppercase; margin-top: 3px; }
+
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
-  th { color: #777; font-weight: 500; white-space: nowrap; }
-  .badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-  .badge.matched { background: #e6f4ea; color: #137333; }
-  .badge.not_found { background: #fce8e6; color: #c5221f; }
-  a { color: #1a73e8; text-decoration: none; }
-  .shot-link { white-space: nowrap; }
-  .profile-img { width: 100%; border: 1px solid #ddd; border-radius: 6px; cursor: zoom-in; }
-  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; align-items: flex-start; justify-content: center; overflow: auto; z-index: 10; }
-  #overlay img { max-width: 95%; margin: 24px auto; display: block; background: #fff; }
-  .cached-note { font-size: 12px; color: #777; margin-bottom: 8px; }
+  th {
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-2); padding: 6px 10px 10px; border-bottom: 2px solid var(--ink); white-space: nowrap;
+  }
+  td { padding: 10px; border-bottom: 1px solid #eae7e0; vertical-align: top; line-height: 1.55; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #faf8f5; }
+  .rank {
+    display: inline-flex; width: 24px; height: 24px; background: var(--paper); color: var(--ink);
+    font-size: 12px; font-weight: 700; align-items: center; justify-content: center; transform: skew(-12deg);
+  }
+  .badge { display: inline-block; padding: 2px 9px; font-size: 12px; font-weight: 600; transform: skew(-8deg); }
+  .badge.matched { background: var(--ink); color: #fff; }
+  .badge.not_found { background: var(--red); color: #fff; }
+  .doi { font-size: 12px; color: var(--text-2); word-break: break-all; }
+
+  .shots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .thumb { border: 1px solid var(--line); background: var(--paper); cursor: zoom-in; transition: border-color .15s; }
+  .thumb:hover { border-color: var(--red); }
+  .thumb img { width: 100%; height: 96px; object-fit: cover; object-position: top; display: block; }
+  .thumb .cap { font-size: 11px; color: var(--text-2); padding: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .profile-shot {
+    width: 100%; max-height: 460px; object-fit: cover; object-position: top;
+    border: 1px solid var(--line); cursor: zoom-in; display: block;
+  }
+  .profile-hint { font-size: 12px; color: var(--text-2); margin-top: 8px; }
+
+  #overlay {
+    position: fixed; inset: 0; background: rgba(17,17,20,.9); display: none;
+    align-items: flex-start; justify-content: center; overflow: auto; z-index: 20; cursor: zoom-out;
+  }
+  #overlay img { max-width: 92%; margin: 40px auto; display: block; background: #fff; }
+
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .side { width: 100%; }
+  }
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>Scholar Agent 人物检索演示 <a href="/review" style="font-size:13px;font-weight:400;margin-left:12px">轨迹数据审查 →</a></h1>
-  <div class="search-bar">
-    <input id="name" placeholder="人物姓名，如 Yann LeCun" autofocus>
-    <input id="aff" placeholder="单位线索（可选）">
-    <button id="btn" onclick="doSearch()">搜索</button>
-  </div>
-  <div id="status"></div>
-  <div id="result"></div>
+
+<div class="layout">
+  <!-- ============ 左侧:控制面板 ============ -->
+  <aside class="side">
+    <div class="brand">
+      <div class="slash">SCHOLAR</div>
+      <h1>Scholar<br><em>Agent</em></h1>
+      <p>后台 Agent 实时驱动浏览器:谷歌学术检索 → 作者主页抽取 → 近五年代表作逐篇核查,全程轨迹留档。</p>
+      <p><a href="/review" style="color:#e8e8ea;font-size:12.5px">轨迹数据审查 →</a></p>
+    </div>
+
+    <div>
+      <div class="block-title">SEARCH / 检索</div>
+      <div class="field">
+        <label>人物姓名 *</label>
+        <input id="name" placeholder="Yann LeCun" autofocus>
+      </div>
+      <div class="field">
+        <label>单位线索(可选)</label>
+        <input id="aff" placeholder="New York University">
+      </div>
+    </div>
+
+    <div>
+      <div class="block-title">CONFIG / 模型</div>
+      <div class="field">
+        <label>模型预设</label>
+        <select id="preset" onchange="onPreset()">
+          <option value="">服务端默认(跟随 config.toml)</option>
+          <option value="k3">Kimi K3 · kimi.com</option>
+          <option value="qwen">Qwen3.5-27B · 硅基流动</option>
+          <option value="custom">自定义…</option>
+        </select>
+      </div>
+      <div id="cfg-fields" style="display:none">
+        <div class="field">
+          <label>Model ID</label>
+          <input id="model_name" placeholder="如 Qwen/Qwen3.5-27B">
+        </div>
+        <div class="field">
+          <label>API Key *</label>
+          <input id="api_key" type="password" placeholder="sk-...">
+        </div>
+        <div class="field" id="f-provider">
+          <label>Provider 类型</label>
+          <select id="provider_type">
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="kimi">kimi</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Base URL</label>
+          <input id="base_url" placeholder="https://api.example.com/v1">
+        </div>
+        <div class="field">
+          <label>上下文窗口(tokens)</label>
+          <input id="max_ctx" type="number" placeholder="262144">
+        </div>
+      </div>
+    </div>
+
+    <button id="btn" onclick="doSearch()">SEARCH →</button>
+
+    <div class="side-foot">
+      模型配置经 KIMI_MODEL_* 环境变量注入,仅存在于内存,不写配置文件。<br>
+      已采集过的人物直接返回缓存结果。
+    </div>
+  </aside>
+
+  <!-- ============ 右侧:状态与结果 ============ -->
+  <main class="main">
+    <div class="main-head">
+      <div class="kick">RESULT</div>
+      <h2>检索结果</h2>
+    </div>
+
+    <div id="status-card">
+      <div class="steps">
+        <div class="step" id="st-1"><div class="dot">1</div>排队</div>
+        <div class="step-line" id="sl-1"></div>
+        <div class="step" id="st-2"><div class="dot">2</div>Agent 采集</div>
+        <div class="step-line" id="sl-2"></div>
+        <div class="step" id="st-3"><div class="dot">3</div>完成</div>
+      </div>
+      <div class="status-detail" id="status-detail"></div>
+    </div>
+
+    <div id="result">
+      <p class="empty-hint">在左侧输入人物姓名开始检索。<br>
+      <b>已采集</b>的人物将直接展示缓存;新人物由 Agent 现场采集,完整链路约 20–40 分钟。</p>
+    </div>
+  </main>
 </div>
+
 <div id="overlay" onclick="this.style.display='none'"><img id="overlay-img"></div>
 
 <script>
-let pollTimer = null;
+const $ = id => document.getElementById(id);
+let pollTimer = null, startTs = null;
 
-function showStatus(state, text) {
-  const el = document.getElementById('status');
-  el.style.display = text ? 'block' : 'none';
-  el.className = state || '';
-  el.textContent = text || '';
+/* ---------- 模型预设 ---------- */
+const PRESETS = {
+  k3:   { model_name: 'k3', provider_type: 'anthropic', base_url: 'https://api.kimi.com/coding', max_ctx: 1048576 },
+  qwen: { model_name: 'Qwen/Qwen3.5-27B', provider_type: 'openai', base_url: 'https://api.siliconflow.cn/v1', max_ctx: 262144 },
+};
+function onPreset() {
+  const v = $('preset').value;
+  $('cfg-fields').style.display = v ? 'block' : 'none';
+  if (PRESETS[v]) {
+    $('model_name').value = PRESETS[v].model_name;
+    $('provider_type').value = PRESETS[v].provider_type;
+    $('base_url').value = PRESETS[v].base_url;
+    $('max_ctx').value = PRESETS[v].max_ctx;
+    $('model_name').readOnly = true;
+  } else if (v === 'custom') {
+    $('model_name').value = ''; $('base_url').value = ''; $('max_ctx').value = '';
+    $('model_name').readOnly = false;
+  }
 }
 
+/* ---------- 状态 ---------- */
+function setStep(n) {
+  for (let i = 1; i <= 3; i++) {
+    const st = $('st-' + i);
+    st.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+    st.querySelector('.dot').textContent = i < n ? '✓' : i;
+  }
+  $('sl-1').className = 'step-line' + (n > 1 ? ' done' : '');
+  $('sl-2').className = 'step-line' + (n > 2 ? ' done' : '');
+}
+function elapsed() {
+  const s = Math.floor((Date.now() - startTs) / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function showStatus(state, text) {
+  $('status-card').style.display = 'block';
+  if (state === 'queued') setStep(1);
+  if (state === 'running') setStep(2);
+  if (state === 'done') setStep(4);
+  const icon = (state === 'running' || state === 'queued') ? '<span class="spinner"></span>' : '';
+  $('status-detail').innerHTML = state === 'failed'
+    ? `<span class="status-error">${esc(text)}</span>`
+    : icon + esc(text) + (state === 'running' ? `<span class="elapsed">${elapsed()}</span>` : '');
+}
+
+/* ---------- 搜索 ---------- */
 async function doSearch() {
-  const name = document.getElementById('name').value.trim();
-  const aff = document.getElementById('aff').value.trim();
+  const name = $('name').value.trim();
   if (!name) return;
-  document.getElementById('btn').disabled = true;
-  document.getElementById('result').innerHTML = '';
+  const preset = $('preset').value;
+  const body = { person_name: name, affiliation_hint: $('aff').value.trim() };
+  if (preset) {
+    if (!$('api_key').value.trim()) { showStatus('failed', '选择了模型预设,必须填写 API Key'); return; }
+    body.model_name = $('model_name').value.trim();
+    body.api_key = $('api_key').value.trim();
+    body.provider_type = $('provider_type').value;
+    body.base_url = $('base_url').value.trim();
+    body.max_context_size = parseInt($('max_ctx').value) || 0;
+  }
+  $('btn').disabled = true;
+  $('result').innerHTML = '';
   clearInterval(pollTimer);
-  showStatus('running', '提交中…');
+  startTs = Date.now();
+  showStatus('queued', '提交任务中…');
   try {
     const resp = await fetch('/api/search', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({person_name: name, affiliation_hint: aff})
+      body: JSON.stringify(body)
     });
     if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
     const data = await resp.json();
     if (data.cached) {
-      showStatus('done', '已采集过该人物，直接展示缓存结果。');
       await loadResult(data.task_id, true);
-      document.getElementById('btn').disabled = false;
+      showStatus('done', '该人物已采集过,以下为缓存结果。');
+      $('btn').disabled = false;
     } else {
       pollTimer = setInterval(() => poll(data.task_id), 3000);
       poll(data.task_id);
     }
   } catch (e) {
-    showStatus('failed', '提交失败：' + e.message);
-    document.getElementById('btn').disabled = false;
+    showStatus('failed', '提交失败:' + e.message);
+    $('btn').disabled = false;
   }
 }
 
 async function poll(taskId) {
   try {
-    const resp = await fetch('/api/status/' + taskId);
-    const s = await resp.json();
-    showStatus(s.state === 'done' ? 'done' : (s.state === 'failed' ? 'failed' : 'running'), s.detail);
+    const s = await (await fetch('/api/status/' + taskId)).json();
+    showStatus(s.state, s.detail);
     if (s.state === 'done') {
       clearInterval(pollTimer);
       await loadResult(taskId, false);
-      document.getElementById('btn').disabled = false;
+      $('btn').disabled = false;
     } else if (s.state === 'failed') {
       clearInterval(pollTimer);
-      document.getElementById('btn').disabled = false;
+      $('btn').disabled = false;
     }
-  } catch (e) { /* 网络抖动，下轮再试 */ }
+  } catch (e) { /* 下轮再试 */ }
 }
 
+/* ---------- 渲染 ---------- */
 function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
-function shotUrl(taskId, filename) { return '/shots/' + taskId + '/' + filename; }
+const shotUrl = (tid, f) => '/shots/' + tid + '/' + f;
+const zoom = src => { $('overlay-img').src = src; $('overlay').style.display = 'flex'; };
 
 async function loadResult(taskId, fromCache) {
   const resp = await fetch('/api/result/' + taskId);
   if (!resp.ok) { showStatus('failed', '读取结果失败'); return; }
   const r = await resp.json();
-
   let html = '';
+
   if (fromCache && r._run && r._run.start_time) {
-    html += `<div class="cached-note">来自缓存，采集于 ${esc(r._run.start_time)}（模型 ${esc(r._run.model)}）</div>`;
+    html += `<div class="cached-note">缓存结果 · 采集于 ${esc(r._run.start_time)} · 模型 ${esc(r._run.model)}</div>`;
   }
 
-  // 作者卡片
+  const initial = esc((r.person_name || '?').trim().charAt(0).toUpperCase());
   html += `<div class="card">
-    <div class="author-name">${esc(r.person_name)}</div>
-    <div class="author-aff">${esc(r.affiliation || '')}</div>
+    <div class="author-head">
+      <div class="avatar">${initial}</div>
+      <div>
+        <div class="author-name">${esc(r.person_name)}</div>
+        <div class="author-aff">${esc(r.affiliation || '')}</div>
+        ${r.profile_url ? `<a class="author-link" href="${esc(r.profile_url)}" target="_blank">Google Scholar 主页 ↗</a>` : ''}
+      </div>
+    </div>
     <div class="tags">${(r.interests || []).map(t => `<span>${esc(t)}</span>`).join('')}</div>
     <div class="metrics">
       <div class="metric"><div class="num">${esc(r.total_citations)}</div><div class="label">总被引</div></div>
       <div class="metric"><div class="num">${esc(r.h_index)}</div><div class="label">h-index</div></div>
       <div class="metric"><div class="num">${esc(r.i10_index)}</div><div class="label">i10-index</div></div>
     </div>
-    ${r.profile_url ? `<div style="margin-top:8px"><a href="${esc(r.profile_url)}" target="_blank">谷歌学术主页 ↗</a></div>` : ''}
   </div>`;
 
-  // 主页截图
-  const profileShot = `${taskId}_profile.png`;
-  html += `<div class="card"><h2>作者主页截图</h2>
-    <img class="profile-img" src="${shotUrl(taskId, profileShot)}" onerror="this.parentElement.style.display='none'"
-         onclick="zoom(this.src)">
-  </div>`;
-
-  // 代表作
   if (r.top_papers && r.top_papers.length) {
-    html += `<div class="card"><h2>代表作（被引 Top ${r.top_papers.length}）</h2><table>
-      <tr><th>标题</th><th>年份</th><th>被引</th></tr>
-      ${r.top_papers.map(p => `<tr><td>${esc(p.title)}</td><td>${esc(p.year)}</td><td>${esc(p.citations)}</td></tr>`).join('')}
+    html += `<div class="card"><h3>代表作 · 被引 Top ${r.top_papers.length}</h3><table>
+      <tr><th style="width:36px"></th><th>标题</th><th>年份</th><th>被引</th></tr>
+      ${r.top_papers.map((p, i) => `<tr>
+        <td><span class="rank">${i + 1}</span></td><td>${esc(p.title)}</td>
+        <td>${esc(p.year)}</td><td>${esc(p.citations)}</td></tr>`).join('')}
     </table></div>`;
   }
 
-  // 近五年论文核查
   if (r.recent_papers && r.recent_papers.length) {
     const ext = r.recent_papers[0].openalex_id !== undefined ? 'openalex' : 's2';
-    html += `<div class="card"><h2>近五年被引 Top ${r.recent_papers.length}（逐篇核查）</h2><table>
-      <tr><th>#</th><th>标题</th><th>年份</th><th>GS 被引</th><th>核查</th><th>${ext === 'openalex' ? 'OpenAlex' : 'S2'} 被引</th><th>来源 / DOI</th><th>截图</th></tr>
+    html += `<div class="card"><h3>近五年代表作 · Top ${r.recent_papers.length}(逐篇核查)</h3><table>
+      <tr><th style="width:36px"></th><th>标题</th><th>年份</th><th>GS 被引</th><th>核查</th><th>${ext === 'openalex' ? 'OpenAlex' : 'S2'} 被引</th><th>来源 / DOI</th></tr>
       ${r.recent_papers.map(p => {
-        const extCitations = ext === 'openalex' ? p.openalex_citations : p.s2_citations;
+        const extCite = ext === 'openalex' ? p.openalex_citations : p.s2_citations;
         const extUrl = ext === 'openalex' ? p.openalex_url : p.s2_url;
         return `<tr>
-          <td>${esc(p.rank)}</td>
+          <td><span class="rank">${esc(p.rank)}</span></td>
           <td>${esc(p.title)}</td>
           <td>${esc(p.year)}</td>
           <td>${esc(p.gs_citations)}</td>
           <td><span class="badge ${esc(p.match_status)}">${esc(p.match_status)}</span></td>
-          <td>${extUrl ? `<a href="${esc(extUrl)}" target="_blank">${esc(extCitations ?? '-')}</a>` : '-'}</td>
-          <td>${esc(p.journal || '')}${p.doi ? `<br><a href="https://doi.org/${esc(p.doi)}" target="_blank">${esc(p.doi)}</a>` : ''}</td>
-          <td>${p.screenshot ? `<a class="shot-link" href="${shotUrl(taskId, p.screenshot)}" target="_blank">查看</a>` : '-'}</td>
+          <td>${extUrl ? `<a href="${esc(extUrl)}" target="_blank">${esc(extCite ?? '-')}</a>` : '-'}</td>
+          <td>${esc(p.journal || '')}${p.doi ? `<br><a class="doi" href="https://doi.org/${esc(p.doi)}" target="_blank">${esc(p.doi)}</a>` : ''}</td>
         </tr>`;
       }).join('')}
     </table></div>`;
+
+    html += `<div class="card"><h3>核查截图</h3><div class="shots-grid">
+      ${r.recent_papers.filter(p => p.screenshot).map(p => `
+        <div class="thumb" onclick="zoom('${shotUrl(taskId, p.screenshot)}')">
+          <img src="${shotUrl(taskId, p.screenshot)}" loading="lazy">
+          <div class="cap">#${esc(p.rank)} ${esc(p.title)}</div>
+        </div>`).join('')}
+    </div></div>`;
   }
 
-  document.getElementById('result').innerHTML = html;
+  html += `<div class="card"><h3>作者主页整页截图</h3>
+    <img class="profile-shot" src="${shotUrl(taskId, taskId + '_profile.png')}"
+         onerror="this.parentElement.style.display='none'" onclick="zoom(this.src)">
+    <div class="profile-hint">预览仅显示顶部区域,点击查看完整长图</div>
+  </div>`;
+
+  $('result').innerHTML = html;
 }
 
-function zoom(src) {
-  document.getElementById('overlay-img').src = src;
-  document.getElementById('overlay').style.display = 'flex';
-}
-
-document.getElementById('name').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+$('name').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
 </script>
 </body>
 </html>
