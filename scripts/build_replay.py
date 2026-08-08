@@ -84,45 +84,74 @@ def step_frame(step):
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <title>__TITLE__ 轨迹回放</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23e60012'/%3E%3Ctext x='16' y='23' font-family='Arial Black' font-size='19' font-weight='900' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--border:#e0e0e0;--bg:#f7f7f8;--accent:#2563eb}
+:root{--red:#e60012;--red-dark:#b0000e;--ink:#111114;--paper:#f4f2ee;--surface:#fff;
+--line:#d8d4cc;--text-2:#6b6560;--ok:#0f7a3d;
+--stripe:repeating-linear-gradient(-45deg,var(--red) 0 14px,transparent 14px 28px)}
 *{box-sizing:border-box}
-body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;height:100vh;display:flex;flex-direction:column;background:var(--bg)}
-#header{background:#fff;border-bottom:1px solid var(--border);padding:10px 16px}
-#header h1{font-size:24px;text-align:center;margin:0}
-.row{flex:1;display:flex;overflow:hidden}
-#steps{width:230px;background:#fff;border-right:1px solid var(--border);overflow-y:auto;padding:8px}
-#steps .item{padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:2px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#steps .item:hover{background:#eef2ff}
-#steps .item.active{background:var(--accent);color:#fff}
-#center{flex:0.9;overflow-y:auto;padding:20px 24px;min-width:380px}
-#right{flex:1.4;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
-#right img{max-width:100%;box-shadow:0 2px 14px rgba(0,0,0,.22);border-radius:4px;background:#fff;cursor:zoom-in}
-#overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:flex-start;
-  justify-content:center;overflow:auto;z-index:20;cursor:zoom-out}
-#overlay img{max-width:96%;margin:20px auto;display:block;background:#fff}
-.nav{display:flex;gap:8px;align-items:center;margin-bottom:14px;position:sticky;top:0;
-  background:var(--bg);padding:6px 0;z-index:5}
-button{padding:6px 14px;cursor:pointer;border:1px solid var(--border);border-radius:6px;background:#fff}
-button:hover{background:#eef2ff}
-input{width:70px;padding:6px;border:1px solid var(--border);border-radius:6px}
-.block{background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px}
-.block h3{margin:0 0 8px;font-size:13px;color:#666;letter-spacing:.5px}
-.reasoning{color:#7c5a00;background:#fffbea;border-left:3px solid #f0b429}
-.text-block{border-left:3px solid var(--accent)}
-pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-family:inherit}
-.args{background:#f0f4ff;border-radius:6px;padding:8px;font-family:Consolas,monospace;font-size:12px}
-.toolname{font-family:Consolas,monospace;color:var(--accent);font-weight:600}
+html,body{height:100%}
+body{font-family:"Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif;margin:0;
+  background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
+.layout{display:flex;height:100vh;overflow:hidden}
+
+/* 左侧:品牌 + 步序(黑) */
+#steps{width:280px;flex-shrink:0;background:var(--ink);color:#fff;overflow-y:auto;
+  padding:32px 22px 32px;position:relative}
+#steps::before{content:"";position:absolute;top:0;left:0;right:0;height:8px;background:var(--stripe)}
+.brand .slash{display:inline-block;background:var(--red);color:#fff;font-size:11px;
+  font-weight:700;padding:3px 10px;transform:skew(-12deg);letter-spacing:.2em;margin-bottom:10px}
+.brand h1{font-family:"Archivo Black",sans-serif;font-size:24px;text-transform:uppercase;line-height:1.1}
+.brand h1 em{color:var(--red);font-style:normal}
+.brand p{color:#8b8b90;font-size:11.5px;margin-top:8px;line-height:1.6}
+.brand a{color:#e8e8ea;font-size:12px}
+#steps .list{margin-top:20px}
+#steps .item{padding:6px 9px;cursor:pointer;font-size:12.5px;margin-bottom:2px;color:#c9c9cf;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:2px solid transparent}
+#steps .item:hover{background:#1d1d22}
+#steps .item.active{background:#1d1d22;border-left-color:var(--red);color:#fff;font-weight:600}
+
+/* 中间:步内容(浅) */
+#center{flex:1.05;overflow-y:auto;padding:28px 30px;min-width:400px}
+.nav{display:flex;gap:8px;align-items:center;margin-bottom:16px;position:sticky;top:0;
+  background:var(--paper);padding:6px 0;z-index:5}
+button{cursor:pointer;font-family:inherit;font-size:13px;padding:8px 16px;border:1px solid var(--line);
+  background:#fff;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}
+button:hover{border-color:var(--ink)}
+#pos{font-size:13px;color:var(--text-2);font-weight:600}
+input{width:76px;padding:8px;border:1px solid var(--line);font-family:inherit;font-size:13px;outline:none}
+input:focus{border-color:var(--red)}
+.block{background:var(--surface);border:1px solid var(--line);padding:14px 16px;margin-bottom:12px}
+.block h3{margin:0 0 8px;font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.14em;text-transform:uppercase}
+.reasoning{background:#fdf8ec;border-left:3px solid #d8a012}
+.text-block{border-left:3px solid var(--red)}
+pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-family:inherit;line-height:1.65}
+.args{background:#f4f2ee;padding:10px;font-family:Consolas,monospace;font-size:12px}
+.toolname{font-family:Consolas,monospace;color:var(--red);font-weight:700}
 .result{color:#444;font-size:12.5px}
 .empty{color:#999;font-size:13px}
+.framepath{font-size:11px;color:#999;margin-top:6px}
+
+/* 右侧:画面 */
+#right{flex:1.3;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow-y:auto}
+#right img{max-width:100%;box-shadow:0 2px 16px rgba(17,17,20,.28);background:#fff;cursor:zoom-in}
+#overlay{position:fixed;inset:0;background:rgba(17,17,20,.85);display:none;align-items:flex-start;
+  justify-content:center;overflow:auto;z-index:20;cursor:zoom-out}
+#overlay img{max-width:96%;margin:20px auto;display:block;background:#fff}
 </style></head><body>
-<div id="header"><h1>__TITLE__ 轨迹回放</h1></div>
-<div class="row">
-<div id="steps"></div>
+<div class="layout">
+<div id="steps">
+  <div class="brand">
+    <div class="slash">REPLAY</div>
+    <h1>__TITLE__<br><em>轨迹回放</em></h1>
+    <p><a id="backlink" href="/review" onclick="goBack();return false;">← 任务列表</a></p>
+  </div>
+  <div class="list" id="steplist"></div>
+</div>
 <div id="center">
   <div class="nav">
-    <a id="backlink" href="/review" onclick="goBack();return false;" style="font-size:13px;color:#2563eb;text-decoration:none">← 任务列表</a>
     <button onclick="go(-1)">← 上一步</button>
     <button onclick="go(1)">下一步 →</button>
     <span id="pos"></span>
@@ -139,7 +168,7 @@ let i = 0;
 const $ = id => document.getElementById(id);
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 function renderList(){
-  $('steps').innerHTML = STEPS.map((s,j)=>{
+  $('steplist').innerHTML = STEPS.map((s,j)=>{
     const label = s.calls.length ? s.calls.map(c=>c.tool).join(', ') : (s.text?'文本':'思考');
     return `<div class="item" id="it${j}" onclick="jumpTo(${s.no})">${s.no}. ${esc(label)}</div>`;
   }).join('');
