@@ -43,3 +43,5 @@ _browser_artifacts/
 logs/
 # 本地协作指南（仅本机，不上传）
 AGENTS.md
+# 本机启动脚本（路径因机器而异）
+start_server.bat
