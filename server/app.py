@@ -22,6 +22,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -135,6 +136,121 @@ def shots(task_id: str, filename: str):
 @app.get("/")
 def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+# ---- 可视化审查系统(第二阶段;数据口径见 docs/ui_data_interface.md) ----------
+
+# 静态托管 data/:回放页 replay.html、frames/、screenshots/ 直接可访问
+app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
+
+
+def _latest_records():
+    """mapping.jsonl 按 task_id 取 start_time 最新一行(任务书口径)"""
+    mapping = DATA_DIR / "mapping.jsonl"
+    latest = {}
+    if mapping.exists():
+        for line in mapping.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            tid = row.get("task_id")
+            if not tid:
+                continue
+            if tid not in latest or (row.get("start_time") or "") > \
+                    (latest[tid].get("start_time") or ""):
+                latest[tid] = row
+    return latest
+
+
+@app.get("/api/review/tasks")
+def review_tasks():
+    """任务列表页数据:状态/框架/模型/耗时/步数/质检状态(仅 task_*)"""
+    latest = _latest_records()
+    tasks = []
+    for d in sorted(DATA_DIR.iterdir()):
+        if not (d.is_dir() and d.name.startswith("task_")):
+            continue
+        rec = latest.get(d.name, {})
+        steps = None
+        aj = d / "alignment.json"
+        if aj.exists():
+            try:
+                steps = json.loads(aj.read_text(encoding="utf-8"))["action_count"]
+            except (json.JSONDecodeError, KeyError):
+                pass
+        rj = d / "review.json"
+        review = None
+        if rj.exists():
+            try:
+                review = json.loads(rj.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+        review_status = (review or {}).get("review_status", "pending")
+        # 任务书口径:状态一列三态 成功/失败/待质检
+        # 执行失败或审查剔除→失败;执行成功+审查合格→成功;其余(未审查/返工)→待质检
+        if rec.get("status") != "success" or review_status == "rejected":
+            display_status = "failed"
+        elif review_status == "approved":
+            display_status = "success"
+        else:
+            display_status = "pending_review"
+        tasks.append({
+            "task_id": d.name,
+            "person_name": rec.get("person_name"),
+            "status": rec.get("status"),
+            "display_status": display_status,
+            "framework": rec.get("framework"),
+            "model": rec.get("model"),
+            "duration_seconds": rec.get("duration_seconds"),
+            "failure_reason": rec.get("failure_reason"),
+            "steps": steps,
+            "has_replay": (d / "replay.html").exists(),
+            "review_status": review_status,
+            "reviewed_at": (review or {}).get("reviewed_at"),
+        })
+    return {"tasks": tasks}
+
+
+class ReviewRequest(BaseModel):
+    task_id: str
+    review_status: str          # approved / rejected / needs_rerun
+    notes: str = ""
+    issues: list = []
+    reviewer: str = ""
+
+
+@app.post("/api/review")
+def submit_review(req: ReviewRequest):
+    """写入审查结论 data/<task_id>/review.json(schema 见 docs/review_schema.md)"""
+    if req.review_status not in ("approved", "rejected", "needs_rerun"):
+        raise HTTPException(400, "review_status 非法")
+    task_dir = DATA_DIR / req.task_id
+    if not (task_dir.is_dir() and req.task_id.startswith("task_")):
+        raise HTTPException(404, "任务不存在")
+    if req.review_status in ("rejected", "needs_rerun") and not req.issues \
+            and not req.notes:
+        raise HTTPException(400, "剔除/返工必须填写问题或备注")
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+    payload = {
+        "task_id": req.task_id,
+        "review_status": req.review_status,
+        "reviewer": req.reviewer,
+        "reviewed_at": now,
+        "issues": req.issues,
+        "notes": req.notes,
+    }
+    (task_dir / "review.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "reviewed_at": now}
+
+
+@app.get("/review")
+def review_page():
+    return FileResponse(str(STATIC_DIR / "review.html"))
 
 
 # ---- 后台 worker -----------------------------------------------------------

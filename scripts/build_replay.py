@@ -87,7 +87,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <style>
 :root{--border:#e0e0e0;--bg:#f7f7f8;--accent:#2563eb}
 *{box-sizing:border-box}
-body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;height:100vh;display:flex;background:var(--bg)}
+body{font-family:system-ui,"Segoe UI",sans-serif;margin:0;height:100vh;display:flex;flex-direction:column;background:var(--bg)}
+#header{background:#fff;border-bottom:1px solid var(--border);padding:10px 16px}
+#header h1{font-size:24px;text-align:center;margin:0}
+.row{flex:1;display:flex;overflow:hidden}
 #steps{width:230px;background:#fff;border-right:1px solid var(--border);overflow-y:auto;padding:8px}
 #steps .item{padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -114,9 +117,12 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-famil
 .result{color:#444;font-size:12.5px}
 .empty{color:#999;font-size:13px}
 </style></head><body>
+<div id="header"><h1>__TITLE__ 轨迹回放</h1></div>
+<div class="row">
 <div id="steps"></div>
 <div id="center">
   <div class="nav">
+    <a id="backlink" href="/review" onclick="goBack();return false;" style="font-size:13px;color:#2563eb;text-decoration:none">← 任务列表</a>
     <button onclick="go(-1)">← 上一步</button>
     <button onclick="go(1)">下一步 →</button>
     <span id="pos"></span>
@@ -125,6 +131,7 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-famil
   <div id="content"></div>
 </div>
 <div id="right"><img id="frame" alt="" onclick="zoom()"></div>
+</div>
 <div id="overlay" onclick="this.style.display='none'"><img id="ovimg"></div>
 <script>
 const STEPS = __STEPS__;
@@ -182,6 +189,14 @@ for (const s of STEPS){
   for (let k = s.calls.length-1; k>=0; k--) if (s.calls[k].frame){ s.frame = s.calls[k].frame; break; }
   if (s.frame) lastFrame = s.frame; else s.frame = lastFrame;
 }
+// 智能返回:从列表页来的回退(保留筛选状态),直接打开的跳 /review
+function goBack(){
+  if (document.referrer && document.referrer.indexOf('/review') >= 0
+      && history.length > 1) history.back();
+  else location.href = '/review';
+}
+// 双击本地打开(file://)时没有服务端,隐藏返回链接
+if (location.protocol === 'file:') document.getElementById('backlink').style.display = 'none';
 renderList(); show();
 </script></body></html>"""
 

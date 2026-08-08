@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轨迹数据审查</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 28px; margin-bottom: 4px; text-align: center; }
+  .sub { color: #777; font-size: 13px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+  th, td { text-align: center; padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  th { color: #777; font-weight: 500; white-space: nowrap; }
+  .badge { display: inline-block; border-radius: 10px; padding: 2px 10px; font-size: 12px; white-space: nowrap; }
+  .badge.success { background: #e6f4ea; color: #137333; }
+  .badge.failed, .badge.captcha { background: #fce8e6; color: #c5221f; }
+  .badge.pending, .badge.pending_review { background: #fef7e0; color: #b06000; }
+  .badge.approved { background: #e6f4ea; color: #137333; }
+  .badge.rejected { background: #fce8e6; color: #c5221f; }
+  .badge.needs_rerun { background: #e8f0fe; color: #1a73e8; }
+  button { padding: 5px 12px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; margin-right: 4px; }
+  button:hover { background: #eef2ff; }
+  button.ok { border-color: #34a853; color: #137333; }
+  button.bad { border-color: #ea4335; color: #c5221f; }
+  button.rerun { border-color: #1a73e8; color: #1a73e8; }
+  a.replay { color: #1a73e8; text-decoration: none; white-space: nowrap; }
+  .noreplay { color: #bbb; font-size: 12px; }
+  #dlg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; align-items: center; justify-content: center; z-index: 10; }
+  #dlg .box { background: #fff; border-radius: 8px; padding: 20px; width: 460px; }
+  #dlg h2 { font-size: 16px; margin-bottom: 12px; }
+  #dlg select, #dlg textarea, #dlg input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: inherit; }
+  #dlg textarea { height: 80px; resize: vertical; }
+  .filter { margin-bottom: 12px; font-size: 13px; }
+  .filter button.on { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>轨迹数据审查</h1>
+  <div class="sub">数据口径:docs/ui_data_interface.md ｜ 标注格式:docs/review_schema.md ｜ <a href="/">演示系统 →</a></div>
+  <div class="filter" id="filter">
+    筛选:
+    <button data-f="all" class="on">全部</button>
+    <button data-f="pending_review">待质检</button>
+    <button data-f="success">成功</button>
+    <button data-f="failed">失败</button>
+  </div>
+  <table>
+    <tr><th>任务</th><th>人物</th><th>框架</th><th>模型</th><th>状态</th><th>耗时</th><th>步数</th><th>回放</th><th>审查操作</th></tr>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div id="dlg">
+  <div class="box">
+    <h2 id="dlg-title">审查</h2>
+    <select id="dlg-status">
+      <option value="approved">合格（入库）</option>
+      <option value="rejected">剔除</option>
+      <option value="needs_rerun">返工重跑</option>
+    </select>
+    <select id="dlg-issue">
+      <option value="">问题类型（无问题留空）</option>
+      <option value="captcha_screenshot">captcha_screenshot — 截图为验证页</option>
+      <option value="fake_not_found">fake_not_found — 假 not_found（额度/加载失败）</option>
+      <option value="screenshot_abnormal">screenshot_abnormal — 截图异常</option>
+      <option value="content_mismatch">content_mismatch — 内容错误/错配</option>
+      <option value="garbled_text">garbled_text — 乱码</option>
+      <option value="other">other — 其他</option>
+    </select>
+    <textarea id="dlg-notes" placeholder="备注 / 问题说明（剔除或返工必填）"></textarea>
+    <input id="dlg-reviewer" placeholder="审查人">
+    <div>
+      <button class="ok" onclick="submitReview()">提交</button>
+      <button onclick="document.getElementById('dlg').style.display='none'">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let TASKS = [];
+let curTask = null;
+let filter = 'all';
+
+const STATUS_LABEL = {success:'成功', failed:'失败', pending_review:'待质检'};
+const REVIEW_LABEL = {pending:'', approved:'合格', rejected:'已剔除', needs_rerun:'返工中'};
+
+function esc(s){return String(s ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function load() {
+  const resp = await fetch('/api/review/tasks');
+  TASKS = (await resp.json()).tasks;
+  render();
+}
+
+function render() {
+  const rows = TASKS.filter(t => filter === 'all' || t.display_status === filter);
+  document.getElementById('rows').innerHTML = rows.map(t => `<tr>
+    <td>${esc(t.task_id)}</td>
+    <td>${esc(t.person_name || '-')}</td>
+    <td style="font-size:12px">${esc(t.framework || '-')}</td>
+    <td style="font-size:12px">${esc(t.model || '-')}</td>
+    <td><span class="badge ${esc(t.display_status)}">${esc(STATUS_LABEL[t.display_status] || '-')}</span>${REVIEW_LABEL[t.review_status] ? `<div style="font-size:11px;color:#999;margin-top:2px">${esc(REVIEW_LABEL[t.review_status])}</div>` : ''}</td>
+    <td>${t.duration_seconds != null ? Math.round(t.duration_seconds/60) + ' 分钟' : '-'}</td>
+    <td>${t.steps ?? '-'}</td>
+    <td>${t.has_replay ? `<a class="replay" href="/data/${esc(t.task_id)}/replay.html">回放 ↗</a>` : '<span class="noreplay">未生成</span>'}</td>
+    <td><button onclick="openDlg('${esc(t.task_id)}','approved')">合格</button><button class="rerun" onclick="openDlg('${esc(t.task_id)}','needs_rerun')">返工</button><button class="bad" onclick="openDlg('${esc(t.task_id)}','rejected')">剔除</button></td>
+  </tr>`).join('') || '<tr><td colspan="9" style="color:#999">无匹配任务</td></tr>';
+}
+
+function openDlg(taskId, preset) {
+  curTask = taskId;
+  document.getElementById('dlg-title').textContent = '审查 ' + taskId;
+  document.getElementById('dlg-status').value = preset;
+  document.getElementById('dlg').style.display = 'flex';
+}
+
+async function submitReview() {
+  const status = document.getElementById('dlg-status').value;
+  const notes = document.getElementById('dlg-notes').value.trim();
+  const issueType = document.getElementById('dlg-issue').value;
+  const reviewer = document.getElementById('dlg-reviewer').value.trim();
+  const issues = issueType ? [{type: issueType, detail: notes, resolved: false}] : [];
+  const resp = await fetch('/api/review', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({task_id: curTask, review_status: status, notes, issues, reviewer})
+  });
+  if (!resp.ok) { alert('提交失败：' + (await resp.json()).detail); return; }
+  document.getElementById('dlg').style.display = 'none';
+  document.getElementById('dlg-notes').value = '';
+  load();
+}
+
+document.querySelectorAll('#filter button').forEach(b => b.onclick = () => {
+  filter = b.dataset.f;
+  document.querySelectorAll('#filter button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+
+load();
+</script>
+</body>
+</html>
