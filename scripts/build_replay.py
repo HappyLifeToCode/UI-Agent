@@ -123,55 +123,75 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <style>
 :root{--red:#e60012;--red-dark:#b0000e;--ink:#111114;--paper:#f4f2ee;--surface:#fff;
 --line:#d8d4cc;--text-2:#6b6560;--ok:#0f7a3d;
---stripe:repeating-linear-gradient(-45deg,var(--red) 0 14px,transparent 14px 28px)}
+--stripe:repeating-linear-gradient(-45deg,var(--red) 0 14px,transparent 14px 28px);
+--stripe-thin:repeating-linear-gradient(-45deg,rgba(230,0,18,.14) 0 8px,transparent 8px 16px)}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{font-family:"Inter","PingFang SC","Microsoft YaHei",system-ui,sans-serif;margin:0;
   background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
+.display{font-family:"Archivo Black","Inter",sans-serif}
 .layout{display:flex;height:100vh;overflow:hidden}
 
 /* 左侧:品牌 + 步序(黑) */
 #steps{width:280px;flex-shrink:0;background:var(--ink);color:#fff;overflow-y:auto;
-  padding:32px 22px 32px;position:relative}
-#steps::before{content:"";position:absolute;top:0;left:0;right:0;height:8px;background:var(--stripe)}
+  padding:36px 22px 32px;position:relative}
+#steps::before{content:"";position:absolute;top:0;left:0;right:0;height:10px;background:var(--stripe)}
 .brand .slash{display:inline-block;background:var(--red);color:#fff;font-size:11px;
-  font-weight:700;padding:3px 10px;transform:skew(-12deg);letter-spacing:.2em;margin-bottom:10px}
+  font-weight:700;padding:4px 12px;transform:skew(-12deg);letter-spacing:.2em;margin-bottom:12px}
 .brand h1{font-family:"Archivo Black",sans-serif;font-size:24px;text-transform:uppercase;line-height:1.1}
 .brand h1 em{color:var(--red);font-style:normal}
-.brand p{color:#8b8b90;font-size:11.5px;margin-top:8px;line-height:1.6}
-.brand a{color:#e8e8ea;font-size:12px;text-decoration:none}
-.brand a:hover{text-decoration:underline}
-#steps .list{margin-top:20px}
-#steps .item{padding:6px 9px;cursor:pointer;font-size:12.5px;margin-bottom:2px;color:#c9c9cf;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:2px solid transparent}
+.brand p{margin-top:12px}
+.brand a{color:#8b8b90;font-size:12px;text-decoration:none}
+.brand a:hover{color:#fff}
+#steps .list{margin-top:22px}
+#steps .item{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;
+  font-size:12.5px;margin-bottom:2px;color:#c9c9cf;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#steps .item .no{display:inline-flex;min-width:22px;height:18px;padding:0 4px;background:#1d1d22;
+  color:#8b8b90;font-size:11px;font-weight:700;align-items:center;justify-content:center;
+  transform:skew(-12deg);flex-shrink:0}
 #steps .item:hover{background:#1d1d22}
-#steps .item.active{background:#1d1d22;border-left-color:var(--red);color:#fff;font-weight:600}
+#steps .item.active{background:#1d1d22;color:#fff;font-weight:600}
+#steps .item.active .no{background:var(--red);color:#fff}
 
 /* 中间:步内容(浅) */
-#center{flex:1.05;overflow-y:auto;padding:28px 30px;min-width:400px}
-.nav{display:flex;gap:8px;align-items:center;margin-bottom:16px;position:sticky;top:0;
-  background:var(--paper);padding:6px 0;z-index:5}
-button{cursor:pointer;font-family:inherit;font-size:13px;padding:8px 16px;border:1px solid var(--line);
-  background:#fff;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}
-button:hover{border-color:var(--ink)}
-#pos{font-size:13px;color:var(--text-2);font-weight:600}
-input{width:76px;padding:8px;border:1px solid var(--line);font-family:inherit;font-size:13px;outline:none}
-input:focus{border-color:var(--red)}
-.block{background:var(--surface);border:1px solid var(--line);padding:14px 16px;margin-bottom:12px}
-.block h3{margin:0 0 8px;font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.14em;text-transform:uppercase}
-.reasoning{background:#fdf8ec;border-left:3px solid #d8a012}
-.text-block{border-left:3px solid var(--red)}
+#center{flex:1.05;overflow-y:auto;padding:30px 32px;min-width:400px;position:relative}
+#center::before{content:"";position:absolute;top:0;left:0;right:0;height:10px;background:var(--stripe-thin)}
+.nav{display:flex;gap:10px;align-items:center;margin-bottom:18px;position:sticky;top:0;
+  background:var(--paper);padding:8px 0;z-index:5}
+button{cursor:pointer;font-family:"Archivo Black",sans-serif;font-size:12px;letter-spacing:.06em;
+  padding:9px 18px 8px;border:none;background:var(--ink);color:#fff;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  transition:background .15s}
+button:hover{background:var(--red)}
+#pos{font-family:"Archivo Black",sans-serif;font-size:13px;background:#fff;border:1px solid var(--line);
+  padding:7px 14px 6px;transform:skew(-12deg)}
+#jump{width:80px;padding:8px;border:1px solid var(--line);font-family:inherit;font-size:13px;
+  outline:none;background:#fff;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}
+#jump:focus{border-color:var(--red)}
+.kick{display:inline-block;background:var(--ink);color:#fff;font-size:11px;font-weight:700;
+  letter-spacing:.16em;padding:4px 12px;transform:skew(-12deg);margin-bottom:8px;text-transform:uppercase}
+.kick.red{background:var(--red)}
+.kick.amber{background:#d8a012}
+.block{background:var(--surface);border:1px solid var(--line);padding:14px 16px;margin-bottom:14px;
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
+.reasoning{background:#fdf8ec}
 pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-family:inherit;line-height:1.65}
-.args{background:#f4f2ee;padding:10px;font-family:Consolas,monospace;font-size:12px}
-.toolname{font-family:Consolas,monospace;color:var(--red);font-weight:700}
+.args{background:var(--paper);padding:10px;font-family:Consolas,monospace;font-size:12px}
+.toolname{font-family:Consolas,monospace;color:var(--red);font-weight:700;font-size:14px}
 .result{color:#444;font-size:12.5px}
 .empty{color:#999;font-size:13px}
-.framepath{font-size:11px;color:#999;margin-top:6px}
+.framepath{font-size:11px;color:#999;margin-top:8px}
 
 /* 右侧:画面 */
-#right{flex:1.3;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow-y:auto}
-#right img{max-width:100%;box-shadow:0 2px 16px rgba(17,17,20,.28);background:#fff;cursor:zoom-in}
-#overlay{position:fixed;inset:0;background:rgba(17,17,20,.85);display:none;align-items:flex-start;
+#right{flex:1.3;padding:30px 28px;overflow-y:auto;position:relative}
+#right::before{content:"";position:absolute;top:0;left:0;right:0;height:10px;background:var(--stripe-thin)}
+.frame-label{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.frame-label .bar{width:16px;height:16px;background:var(--red);transform:skew(-12deg);flex-shrink:0}
+.frame-label span{font-family:"Archivo Black",sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+#right img{max-width:100%;background:#fff;cursor:zoom-in;border:1px solid var(--line);
+  clip-path:polygon(0 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%)}
+#overlay{position:fixed;inset:0;background:rgba(17,17,20,.9);display:none;align-items:flex-start;
   justify-content:center;overflow:auto;z-index:20;cursor:zoom-out}
 #overlay img{max-width:96%;margin:20px auto;display:block;background:#fff}
 </style></head><body>
@@ -193,7 +213,12 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:13px;margin:0;font-famil
   </div>
   <div id="content"></div>
 </div>
-<div id="right"><img id="frame" alt="" onclick="zoom()"></div>
+<div id="right">
+  <div style="position:sticky;top:0">
+    <div class="frame-label"><div class="bar"></div><span>Browser Frame / 浏览器画面</span></div>
+    <img id="frame" alt="" onclick="zoom()">
+  </div>
+</div>
 </div>
 <div id="overlay" onclick="this.style.display='none'"><img id="ovimg"></div>
 <script>
@@ -204,26 +229,26 @@ function esc(s){const d=document.createElement('div');d.textContent=s;return d.i
 function renderList(){
   $('steplist').innerHTML = STEPS.map((s,j)=>{
     const label = s.calls.length ? s.calls.map(c=>c.tool).join(', ') : (s.text?'文本':'思考');
-    return `<div class="item" id="it${j}" onclick="jumpTo(${s.no})">${s.no}. ${esc(label)}</div>`;
+    return `<div class="item" id="it${j}" onclick="jumpTo(${s.no})"><span class="no">${s.no}</span>${esc(label)}</div>`;
   }).join('');
 }
 function show(){
   const s = STEPS[i];
   document.querySelectorAll('.item').forEach(e=>e.classList.remove('active'));
   const it = $('it'+i); if(it){it.classList.add('active');it.scrollIntoView({block:'nearest'});}
-  $('pos').textContent = `第 ${s.no} / ${STEPS.length} 步`;
+  $('pos').textContent = `${s.no} / ${STEPS.length}`;
   $('jump').value = s.no;
   let h = '';
   h += s.reasoning
-    ? `<div class="block reasoning"><h3>思考</h3><pre>${esc(s.reasoning)}</pre></div>` : '';
+    ? `<div class="block reasoning"><div class="kick amber">THINKING / 思考</div><pre>${esc(s.reasoning)}</pre></div>` : '';
   h += s.text
-    ? `<div class="block text-block"><h3>输出</h3><pre>${esc(s.text)}</pre></div>` : '';
+    ? `<div class="block"><div class="kick red">OUTPUT / 输出</div><pre>${esc(s.text)}</pre></div>` : '';
   for (const c of s.calls){
-    h += `<div class="block"><h3>工具调用</h3>
+    h += `<div class="block"><div class="kick">TOOL CALL / 工具调用</div>
       <div class="toolname">${esc(c.tool)}</div>
       <pre class="args">${esc(JSON.stringify(c.args,null,1))}</pre>
-      ${c.result?`<h3 style="margin-top:8px">返回</h3><pre class="result">${esc(c.result)}</pre>`:''}
-      ${c.frame?`<div style="font-size:12px;color:#888;margin-top:4px">画面: ${esc(c.frame)}</div>`:''}
+      ${c.result?`<div class="kick" style="margin-top:10px">RESULT / 返回</div><pre class="result">${esc(c.result)}</pre>`:''}
+      ${c.frame?`<div class="framepath">画面: ${esc(c.frame)}</div>`:''}
     </div>`;
   }
   if (!s.reasoning && !s.text && !s.calls.length) h = '<div class="empty">(本步无内容)</div>';
