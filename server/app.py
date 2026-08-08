@@ -13,6 +13,7 @@
 - 缓存优先：data/ 下已有该人物的成功结果（status=success）直接返回。
 """
 import json
+import os
 import queue
 import re
 import sys
@@ -77,6 +78,14 @@ def _find_cache(person_name: str):
 class SearchRequest(BaseModel):
     person_name: str
     affiliation_hint: str = ""
+    # 可选的模型配置：非空时通过 KIMI_MODEL_* 环境变量临时指定模型
+    # （kimi-code 官方通道，不改 config.toml；api_key 只存在于进程内存，
+    #  不落盘、不写进 task.json / mapping.jsonl）
+    model_name: str = ""
+    api_key: str = ""
+    provider_type: str = ""        # kimi / anthropic / openai
+    base_url: str = ""
+    max_context_size: int = 0
 
 
 @app.post("/api/search")
@@ -84,6 +93,18 @@ def search(req: SearchRequest):
     name = req.person_name.strip()
     if not name:
         raise HTTPException(400, "person_name 不能为空")
+
+    model_cfg = None
+    if req.model_name.strip():
+        if not req.api_key.strip():
+            raise HTTPException(400, "指定了模型就必须提供 api_key")
+        model_cfg = {
+            "model_name": req.model_name.strip(),
+            "api_key": req.api_key.strip(),
+            "provider_type": req.provider_type.strip(),
+            "base_url": req.base_url.strip(),
+            "max_context_size": req.max_context_size,
+        }
 
     cached = _find_cache(name)
     if cached:
@@ -95,7 +116,10 @@ def search(req: SearchRequest):
         "affiliation_hint": req.affiliation_hint.strip(),
     }
     with _jobs_lock:
-        _jobs[task["task_id"]] = {"state": "queued", "detail": "排队中", "task": task}
+        _jobs[task["task_id"]] = {
+            "state": "queued", "detail": "排队中", "task": task,
+            "model_cfg": model_cfg,
+        }
     _job_queue.put(task)
     return {"task_id": task["task_id"], "cached": False}
 
@@ -284,6 +308,36 @@ def _progress_reporter(task_id: str, stop: threading.Event):
                  f"采集中（完整链路约 20-40 分钟）{('｜' + tail) if tail else ''}")
 
 
+_MODEL_ENV_KEYS = ("KIMI_MODEL_NAME", "KIMI_MODEL_API_KEY", "KIMI_MODEL_PROVIDER_TYPE",
+                   "KIMI_MODEL_BASE_URL", "KIMI_MODEL_MAX_CONTEXT_SIZE")
+
+
+def _apply_model_env(cfg: dict):
+    """把 KIMI_MODEL_* 写入进程环境（子进程 kimi CLI 继承），返回旧值供恢复。
+
+    worker 单线程串行执行，env 的修改-恢复不会交错。api_key 只进内存与环境变量，
+    不落盘。
+    """
+    saved = {k: os.environ.get(k) for k in _MODEL_ENV_KEYS}
+    os.environ["KIMI_MODEL_NAME"] = cfg["model_name"]
+    os.environ["KIMI_MODEL_API_KEY"] = cfg["api_key"]
+    if cfg.get("provider_type"):
+        os.environ["KIMI_MODEL_PROVIDER_TYPE"] = cfg["provider_type"]
+    if cfg.get("base_url"):
+        os.environ["KIMI_MODEL_BASE_URL"] = cfg["base_url"]
+    if cfg.get("max_context_size"):
+        os.environ["KIMI_MODEL_MAX_CONTEXT_SIZE"] = str(cfg["max_context_size"])
+    return saved
+
+
+def _restore_model_env(saved: dict):
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
 def _worker():
     while True:
         task = _job_queue.get()
@@ -291,9 +345,16 @@ def _worker():
         if not run_tasks.acquire_lock():
             _set_job(tid, "failed", "检测到有批处理执行器在运行，请稍后再试")
             continue
+        with _jobs_lock:
+            model_cfg = _jobs.get(tid, {}).get("model_cfg")
+        saved_env = None
+        saved_model = run_tasks.MODEL
         stop = threading.Event()
         reporter = threading.Thread(target=_progress_reporter, args=(tid, stop), daemon=True)
         try:
+            if model_cfg:
+                saved_env = _apply_model_env(model_cfg)
+                run_tasks.MODEL = model_cfg["model_name"]  # mapping/_run 的模型标签
             _set_job(tid, "running", "采集中（完整链路约 20-40 分钟）")
             reporter.start()
             record = run_tasks.run_one_task(task)
@@ -307,6 +368,9 @@ def _worker():
         finally:
             stop.set()
             reporter.join(timeout=5)
+            if saved_env is not None:
+                _restore_model_env(saved_env)
+            run_tasks.MODEL = saved_model
             run_tasks.release_lock()
             _job_queue.task_done()
 
