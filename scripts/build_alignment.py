@@ -34,6 +34,9 @@ KEY_ARGS = {
     "tab_close": ["index"],
     "go_back": [],
     "go_forward": [],
+    # run_code 的 code 文本用于和 trace 动作做方法级对齐(hover+click 等多
+    # 动作组合若只匹配第一个,后续动作会连环错位)
+    "run_code": ["code"],
 }
 
 
