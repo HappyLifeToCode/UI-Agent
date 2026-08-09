@@ -140,6 +140,18 @@
     font-size: 12.5px; font-weight: 600; color: var(--ink);
     background: #fff7d6; border-left: 6px solid #f5c800; padding: 10px 16px;
   }
+  .task-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .action-btn {
+    border: none; cursor: pointer; font-family: "Archivo Black", sans-serif;
+    background: var(--ink); color: #fff; font-size: 12px; letter-spacing: .1em;
+    padding: 9px 18px 8px; text-transform: uppercase; text-decoration: none;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    transition: background .15s; display: inline-block;
+  }
+  .action-btn:hover:not(:disabled) { background: var(--red); }
+  .action-btn:disabled { background: #4a4a50; cursor: wait; }
+  .action-link { font-size: 12px; }
+  #replay-state { font-size: 12px; color: var(--text-2); }
   .card {
     background: var(--surface); border: 1px solid var(--line); padding: 22px 26px;
     clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
@@ -433,6 +445,14 @@ async function loadResult(taskId, fromCache) {
     html += `<div class="cached-note">缓存结果 · 采集于 ${esc(r._run.start_time)} · 模型 ${esc(r._run.model)}</div>`;
   }
 
+  // 任务操作条:生成回放 / 导出
+  html += `<div class="card task-actions">
+    <button class="action-btn" id="replay-btn" onclick="genReplay('${taskId}')">生成回放 ↗</button>
+    <a class="action-btn" href="/api/export/${taskId}" download>导出 ZIP</a>
+    <a class="action-link" href="/api/export/${taskId}?include_trace=1">含 trace.zip(数百 MB)</a>
+    <span id="replay-state"></span>
+  </div>`;
+
   const initial = esc((r.person_name || '?').trim().charAt(0).toUpperCase());
   html += `<div class="card">
     <div class="author-head">
@@ -495,6 +515,23 @@ async function loadResult(taskId, fromCache) {
   </div>`;
 
   $('result').innerHTML = html;
+}
+
+async function genReplay(taskId) {
+  const btn = $('replay-btn');
+  const st = $('replay-state');
+  btn.disabled = true;
+  st.textContent = '生成中(trace.zip 较大时约需 1-2 分钟)…';
+  try {
+    const resp = await fetch('/api/replay/' + taskId, {method: 'POST'});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || resp.statusText);
+    st.innerHTML = `已生成(${d.steps} 步,${d.matched}/${d.actions} 动作匹配画面)` +
+      ` <a href="${d.replay}" target="_blank">打开回放 ↗</a>`;
+  } catch (e) {
+    st.textContent = '生成失败:' + e.message;
+  }
+  btn.disabled = false;
 }
 
 $('name').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });

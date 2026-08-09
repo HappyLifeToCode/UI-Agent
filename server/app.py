@@ -168,6 +168,74 @@ def index():
 app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
 
 
+def _build_replay_chain(task_id: str):
+    """跑回放三件套:alignment.json -> frames.json -> replay.html。
+
+    直接 import scripts/ 下的三个构建脚本复用其 build/extract 函数
+    (scripts 目录已在 sys.path)。trace.zip 大时 extract 需数十秒到几分钟。
+    """
+    import build_alignment
+    import extract_trace_frames
+    import build_replay as br
+
+    task_dir = DATA_DIR / task_id
+    if not (task_dir / "wire.jsonl").exists():
+        raise HTTPException(404, "缺少 wire.jsonl，无法生成回放")
+    a = build_alignment.build(task_dir)
+    (task_dir / "alignment.json").write_text(
+        json.dumps(a, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not (task_dir / "trace.zip").exists():
+        raise HTTPException(400, "缺少 trace.zip，无法提取画面帧")
+    f = extract_trace_frames.extract(task_dir)
+    _, n = br.build(task_dir)
+    return {"actions": a["action_count"], "matched": f["matched_count"],
+            "steps": n, "replay": f"/data/{task_id}/replay.html"}
+
+
+@app.post("/api/replay/{task_id}")
+def build_replay_api(task_id: str):
+    """按 task_id 生成回放三件套(幂等,重复调用覆盖重建)。"""
+    if not (DATA_DIR / task_id).is_dir():
+        raise HTTPException(404, "任务不存在")
+    try:
+        return {"ok": True, **_build_replay_chain(task_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"生成回放失败: {e}")
+
+
+@app.get("/api/export/{task_id}")
+def export_task(task_id: str, include_trace: int = 0):
+    """打包下载整个任务目录(zip)。默认不含 trace.zip(可达数百 MB),
+    include_trace=1 时包含。"""
+    import tempfile
+    import zipfile
+    from starlette.background import BackgroundTask
+
+    if not re.fullmatch(r"[A-Za-z0-9_]+", task_id):
+        raise HTTPException(400, "非法 task_id")
+    task_dir = DATA_DIR / task_id
+    if not task_dir.is_dir():
+        raise HTTPException(404, "任务不存在")
+
+    tmp = tempfile.NamedTemporaryFile(prefix=f"{task_id}_", suffix=".zip", delete=False)
+    tmp.close()
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(task_dir.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(task_dir)
+            if rel.parts[0] == "__pycache__":
+                continue
+            if not include_trace and p.name == "trace.zip":
+                continue
+            zf.write(p, f"{task_id}/{rel}")
+    return FileResponse(tmp.name, filename=f"{task_id}.zip",
+                        media_type="application/zip",
+                        background=BackgroundTask(os.remove, tmp.name))
+
+
 def _latest_records():
     """mapping.jsonl 按 task_id 取 start_time 最新一行(任务书口径)"""
     mapping = DATA_DIR / "mapping.jsonl"
@@ -359,7 +427,11 @@ def _worker():
             reporter.start()
             record = run_tasks.run_one_task(task)
             if record.get("status") == "success":
-                _set_job(tid, "done", "完成")
+                try:
+                    info = _build_replay_chain(tid)
+                    _set_job(tid, "done", f"完成，回放已生成（{info['steps']} 步）")
+                except Exception as e:  # 回放生成失败不影响采集结果本身
+                    _set_job(tid, "done", f"完成（回放生成失败：{e}，可在结果页手动点「生成回放」）")
             else:
                 reason = record.get("failure_reason") or record.get("status") or "未知原因"
                 _set_job(tid, "failed", f"任务未成功：{reason}")
