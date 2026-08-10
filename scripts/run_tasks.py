@@ -287,10 +287,13 @@ def collect_browser_artifacts(before: dict, task: dict, task_dir: Path):
     if moved == 0:
         # 兜底：本次运行新产生的任意 png，按产生时间顺序编号归档
         new_pngs = []
-        if MCP_OUTPUT_DIR.exists():
-            for p in MCP_OUTPUT_DIR.glob("*.png"):
+        for base in (MCP_OUTPUT_DIR, PROJECT_ROOT):
+            if not base.exists():
+                continue
+            for p in base.glob("*.png"):
                 mtime = p.stat().st_mtime
-                if _is_new(str(p.relative_to(MCP_OUTPUT_DIR)), mtime, before):
+                key = str(p.relative_to(base))
+                if key not in before or mtime > before.get(key, 0):
                     new_pngs.append((mtime, p))
         for i, (_, p) in enumerate(sorted(new_pngs), start=1):
             shutil.move(str(p), str(screenshots_dir / f"{task_id}_paper_{i:02d}.png"))
@@ -491,6 +494,7 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
         return {"task_id": task_id, "status": "dry_run", "session_id": None}
 
     task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "screenshots").mkdir(parents=True, exist_ok=True)
 
     # 1. 保存任务定义副本
     (task_dir / "task.json").write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
