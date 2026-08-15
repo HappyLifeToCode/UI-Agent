@@ -65,8 +65,11 @@ def validate_task(task_dir: Path) -> dict:
             if "_run" not in result_data:
                 warnings.append("缺少 _run 执行元信息（应由执行器跑完后补写）")
 
-            if status == "success":
-                # 成功状态下，检查数据完整性
+            if status == "partial":
+                warnings.append("partial：部分论文核查会话未完成，缺失篇目按 not_found 记录")
+
+            if status in ("success", "partial"):
+                # 成功/部分成功状态下，检查数据完整性
                 if "total_citations" not in result_data:
                     warnings.append("缺少 total_citations")
                 elif not isinstance(result_data["total_citations"], int):
@@ -77,11 +80,13 @@ def validate_task(task_dir: Path) -> dict:
                 elif len(result_data.get("top_papers", [])) < 3:
                     warnings.append(f"top_papers 少于3篇，实际: {len(result_data.get('top_papers', []))}")
 
-                # recent_papers：近五年 Top10 论文的 OpenAlex 核查（契约 §3）
+                # recent_papers：近五年（2021+）全部论文的逐篇核查（S2 或 OpenAlex 链路，
+                # 数量动态不限 10 篇；三段式管线产出，见 scripts/run_tasks.py [M8]）
                 rp = result_data.get("recent_papers")
-                if not isinstance(rp, list) or not rp:
+                if not isinstance(rp, list) or (not rp and status == "success"
+                                                and result_data.get("note") is None):
                     issues.append("success 状态但缺少 recent_papers（近五年论文清单）")
-                else:
+                elif isinstance(rp, list):
                     for i, paper in enumerate(rp, 1):
                         if paper.get("match_status") not in ("matched", "not_found"):
                             issues.append(f"recent_papers[{i}] match_status 非法: {paper.get('match_status')}")
@@ -89,14 +94,18 @@ def validate_task(task_dir: Path) -> dict:
                             issues.append(f"recent_papers[{i}] gs_citations 应为整数")
                         shot = paper.get("screenshot")
                         if not shot:
-                            issues.append(f"recent_papers[{i}] 缺少 screenshot 字段")
+                            # partial 下"核查会话未完成"的篇目没有截图是预期行为，降级为警告
+                            (issues if status == "success" else warnings).append(
+                                f"recent_papers[{i}] 缺少 screenshot 字段")
                         elif not (task_dir / "screenshots" / shot).exists():
                             issues.append(f"recent_papers[{i}] 声明的截图不存在: {shot}")
-                        if paper.get("match_status") == "matched" and \
-                                not isinstance(paper.get("openalex_citations"), int):
-                            issues.append(f"recent_papers[{i}] openalex_citations 应为整数（matched）")
-                    if sum(1 for p in rp if p.get("match_status") == "matched") == 0:
-                        warnings.append("recent_papers 全部 not_found（OpenAlex 未收录），需人工复核")
+                        if paper.get("match_status") == "matched":
+                            # 字段兼容：S2 链路用 s2_citations，OpenAlex 链路用 openalex_citations
+                            ext_cites = paper.get("openalex_citations", paper.get("s2_citations"))
+                            if not isinstance(ext_cites, int):
+                                issues.append(f"recent_papers[{i}] 外部被引数（openalex_citations/s2_citations）应为整数（matched）")
+                    if rp and sum(1 for p in rp if p.get("match_status") == "matched") == 0:
+                        warnings.append("recent_papers 全部 not_found（外部库未收录），需人工复核")
 
         except json.JSONDecodeError as e:
             issues.append(f"result.json 格式错误: {e}")

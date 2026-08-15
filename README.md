@@ -56,20 +56,29 @@ logs/           执行日志（非交付物，不进 Git）
 python scripts/run_tasks.py --limit 1 --no-delay
 ```
 
-检查 `data/task_0001/` 应严格包含 5 项产物：
+检查 `data/task_0001/` 的产物（三段式管线，2026-08-13 起）：
 
 ```
 data/task_0001/
 ├── task.json        # 任务定义副本
-├── result.json      # 抽取结果（姓名/单位/引用数/代表作 + recent_papers 近五年
-│                    #   Top10 论文的 OpenAlex 核查数据）
-├── wire.jsonl       # Agent 完整轨迹
-├── trace.zip        # 浏览器侧轨迹（npx playwright show-trace 可回放）
+├── phase1.json      # 阶段一产物：作者信息 + 近五年全部论文清单
+├── ranked_papers.json  # 执行器按 GS 被引降序编号的清单（rank 1..N）
+├── checks/          # 阶段二逐篇核查 fragment（paper_NN.json，每篇一个；
+│                    #   合并进 result.json 后自动清理，仅运行中途可见）
+├── result.json      # 合并后的契约结果（姓名/单位/引用数/代表作 + recent_papers
+│                    #   近五年全部论文的核查数据；status 含 partial 态）
+├── task_0001_report.docx  # Word 报告（逐篇详情 + 截图证据，export_word.py 生成）
+├── wire.jsonl       # Agent 完整轨迹（各阶段 wire 按序拼接）
+├── trace.zip        # 主会话浏览器侧轨迹（npx playwright show-trace 可回放）
+├── trace_batchNN.zip    # 各核查批会话的 trace（附加产物）
 └── screenshots/
     ├── task_0001_profile.png    # 作者主页整页截图
-    ├── task_0001_paper_01.png   # 论文 1 的 OpenAlex 详情页整页截图
+    ├── task_0001_paper_01.png   # rank 1 论文的核查页截图
     └── ...                      # 每篇 recent_papers 一张（not_found 为搜索页留证）
 ```
+
+旧版单会话 top-10 链路仍可用 `python scripts/run_tasks.py --template
+task_prompt_template_s2.md` 回退（不产生 phase1/checks/docx）。
 
 ### 第 3 步：全量跑批
 

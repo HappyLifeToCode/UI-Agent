@@ -57,22 +57,31 @@ def _next_task_id() -> str:
 
 
 def _find_cache(person_name: str):
-    """在 data/ 下找该人物已有的成功结果，命中返回 task_id，否则 None。"""
+    """在 data/ 下找该人物已有的结果，命中返回 task_id，否则 None。
+
+    优先返回 status=success 的完整结果；没有 success 时退而返回
+    partial 的（前端只展示已核查篇目），都没有才算未采集。
+    """
     needle = person_name.strip().lower()
     if not needle or not DATA_DIR.exists():
         return None
+    partial_hit = None
     for rj in sorted(DATA_DIR.glob("*/result.json"),
                      key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             data = json.loads(rj.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if data.get("status") != "success":
+        status = data.get("status")
+        if status not in ("success", "partial"):
             continue
         name = str(data.get("person_name", "")).lower()
         if needle in name or name in needle:
-            return rj.parent.name
-    return None
+            if status == "success":
+                return rj.parent.name
+            if partial_hit is None:
+                partial_hit = rj.parent.name
+    return partial_hit
 
 
 class SearchRequest(BaseModel):
@@ -138,13 +147,16 @@ def status(task_id: str):
 
 @app.get("/api/result/{task_id}")
 def result(task_id: str):
+    # L3 查询时懒恢复：result.json 缺失或比最新 fragment 旧时先重建再返回
+    if run_tasks.result_needs_rebuild(DATA_DIR / task_id):
+        run_tasks.merge_result(DATA_DIR / task_id)
     rj = DATA_DIR / task_id / "result.json"
     if not rj.exists():
         raise HTTPException(404, "结果不存在")
     return json.loads(rj.read_text(encoding="utf-8"))
 
 
-_SHOT_RE = re.compile(r"^[A-Za-z0-9_]+_(profile|paper_\d{2})\.png$")
+_SHOT_RE = re.compile(r"^[A-Za-z0-9_]+_(profile|paper_\d{2,3})\.png$")
 
 
 @app.get("/shots/{task_id}/{filename}")
@@ -197,6 +209,9 @@ def review_tasks():
     for d in sorted(DATA_DIR.iterdir()):
         if not (d.is_dir() and d.name.startswith("task_")):
             continue
+        # L3 查询时懒恢复：中断残留的任务先重建 result.json 再汇总
+        if run_tasks.result_needs_rebuild(d):
+            run_tasks.merge_result(d)
         rec = latest.get(d.name, {})
         steps = None
         aj = d / "alignment.json"
@@ -358,8 +373,12 @@ def _worker():
             _set_job(tid, "running", "采集中（完整链路约 20-40 分钟）")
             reporter.start()
             record = run_tasks.run_one_task(task)
-            if record.get("status") == "success":
-                _set_job(tid, "done", "完成")
+            if record.get("status") in ("success", "partial"):
+                # partial 也可查看：前端只展示已核查的篇目
+                if record.get("status") == "partial":
+                    _set_job(tid, "done", "部分完成（部分论文未核查，仅展示已核查结果）")
+                else:
+                    _set_job(tid, "done", "完成")
             else:
                 reason = record.get("failure_reason") or record.get("status") or "未知原因"
                 _set_job(tid, "failed", f"任务未成功：{reason}")
@@ -374,6 +393,9 @@ def _worker():
             run_tasks.release_lock()
             _job_queue.task_done()
 
+
+# L2 启动兜底：服务启动时自动重建中断/崩溃残留的 result.json
+run_tasks.recover_interrupted()
 
 threading.Thread(target=_worker, daemon=True).start()
 
