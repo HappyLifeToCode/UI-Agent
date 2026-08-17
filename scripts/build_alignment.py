@@ -68,12 +68,16 @@ def build(task_dir):
 
     pending = {}  # toolCallId -> action 条目(等 result 回填)
     actions = []
+    session_idx = -1  # 三段式管线的 wire.jsonl 是多会话拼接的,metadata 事件 = 会话边界
     with open(wire_path, encoding="utf-8") as f:
         for line_no, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
             ev = json.loads(line)
+            if ev["type"] == "metadata":
+                session_idx += 1  # 每个 kimi 会话的 wire 以 metadata 开头
+                continue
             if ev["type"] != "context.append_loop_event":
                 continue
             e = ev["event"]
@@ -84,6 +88,7 @@ def build(task_dir):
                         if k in key_names}
                 action = {
                     "seq": len(actions) + 1,
+                    "session_idx": max(session_idx, 0),  # 动作属于第几个会话
                     "tool": tool,
                     "tool_call_id": e["toolCallId"],
                     "wire_line": line_no,
@@ -114,6 +119,7 @@ def build(task_dir):
     return {
         "task_id": task_id,
         "source": f"data/{task_id}/wire.jsonl",
+        "session_count": session_idx + 1,  # 会话数(三段式: 1 个主会话 + N 个核查批)
         "action_count": len(actions),
         "screenshot_count": sum(1 for a in actions if a["screenshot"]),
         "trace_zip": (task_dir / "trace.zip").exists(),

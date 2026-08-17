@@ -13,10 +13,12 @@
 
 - **任务**:给定人物姓名(及单位线索),Agent 使用 playwright-mcp 浏览器工具
   执行三段流程:① 谷歌学术检索人物、进入作者主页抽取信息并整页截图
-  (`<task_id>_profile.png`),筛出近五年(2021+)被引 Top 10 论文;② 逐篇到
-  OpenAlex 核查(被引数/DOI/期刊),每篇整页截图一张(`<task_id>_paper_NN.png`,
-  NN = rank;not_found 篇目截搜索结果页留证);③ 写入含 `recent_papers` 数组的
-  result.json(契约 §3;截图清单以契约 2026-07-29 版为准);
+  (`<task_id>_profile.png`),收集近五年(2021+)全部论文(2026-08-13 起不限
+  Top 10,按 GS 被引全局降序编 rank);② 逐篇到外部库核查(被引数/DOI/期刊;
+  本地链路用 Semantic Scholar,契约链路为 OpenAlex),每篇截图一张
+  (`<task_id>_paper_NN.png`,NN = rank;not_found 篇目截搜索结果页留证);
+  ③ 写入含 `recent_papers` 数组的 result.json(契约 §3;截图清单以契约
+  2026-07-29 版为准);
 - **执行框架**:Kimi Code CLI(模型 kimi-for-coding/k3);
 - **浏览器**:Playwright + 无头 Chrome,经 playwright-mcp 调用;
 - **原始轨迹**:Kimi Code wire 文件(事件流),`data/<task_id>/wire.jsonl`。

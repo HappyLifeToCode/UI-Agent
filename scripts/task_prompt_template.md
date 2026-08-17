@@ -83,7 +83,9 @@ async (page) => {
    i10-index All、i10-index Since。result.json 取 All 列（第 1、3、5 个值）。
    top3 即被引数最高的 3 篇代表作。
 
-6. 截图：browser_take_screenshot，fullPage=true，filename={{TASK_ID}}_profile.png。
+6. 先滚回页面顶部，再截图：执行
+   `await page.evaluate(() => window.scrollTo(0, 0))` 回到顶部，
+   然后 browser_take_screenshot，fullPage=true，filename={{TASK_ID}}_profile.png。
    前提：第 5 步已成功提取到姓名和论文表格（提取成功 = 页面已渲染）；
    若第 5 步提取为空，先按第 10 步的空白页规则刷新重试，不要截空白页。
 

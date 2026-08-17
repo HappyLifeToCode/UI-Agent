@@ -201,6 +201,18 @@
   .badge.not_found { background: var(--red); color: #fff; }
   .doi { font-size: 12px; color: var(--text-2); word-break: break-all; }
 
+  .filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .filter-bar label {
+    font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-2); white-space: nowrap;
+  }
+  .filter-bar select {
+    background: var(--paper); border: 1px solid var(--line); color: var(--ink);
+    padding: 7px 12px; font-size: 13px; font-family: inherit; border-radius: 0;
+    outline: none; cursor: pointer; appearance: none;
+  }
+  .filter-bar select:focus { border-color: var(--red); }
+
   .shots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .thumb { border: 1px solid var(--line); background: var(--paper); cursor: zoom-in; transition: border-color .15s; }
   .thumb:hover { border-color: var(--red); }
@@ -435,6 +447,27 @@ function esc(s) {
 const shotUrl = (tid, f) => '/shots/' + tid + '/' + f;
 const zoom = src => { $('overlay-img').src = src; $('overlay').style.display = 'flex'; };
 
+/* 年份筛选：表格行与截图网格共用 data-year，同口径联动；
+   选中具体年份时序号在该年内从 1 重排（年内仍按 GS 被引降序），
+   切回"全部年份"恢复全局被引排名（data-global） */
+function applyYearFilter() {
+  const y = $('year-filter').value;
+  let n = 0;
+  document.querySelectorAll('#result .paper-row').forEach(el => {
+    const show = !y || el.dataset.year === y;
+    el.style.display = show ? '' : 'none';
+    const span = el.querySelector('.rank');
+    if (span) span.textContent = (show && y) ? ++n : span.dataset.global;
+  });
+  let m = 0;
+  document.querySelectorAll('#result .thumb[data-year]').forEach(el => {
+    const show = !y || el.dataset.year === y;
+    el.style.display = show ? '' : 'none';
+    const span = el.querySelector('.rank-num');
+    if (span) span.textContent = '#' + ((show && y) ? ++m : span.dataset.global);
+  });
+}
+
 async function loadResult(taskId, fromCache) {
   const resp = await fetch('/api/result/' + taskId);
   if (!resp.ok) { showStatus('failed', '读取结果失败'); return; }
@@ -480,15 +513,38 @@ async function loadResult(taskId, fromCache) {
     </table></div>`;
   }
 
-  if (r.recent_papers && r.recent_papers.length) {
-    const ext = r.recent_papers[0].openalex_id !== undefined ? 'openalex' : 's2';
-    html += `<div class="card"><h3>近五年代表作 · Top ${r.recent_papers.length}(逐篇核查)</h3><table>
+  // partial 结果只展示已核查的篇目（matched，或 not_found 但有留证截图），
+  // 核查未完成的篇目不进表格；数据层 result.json 保持全量不受影响
+  const isPartial = r.status === 'partial';
+  const isChecked = p => p.match_status === 'matched' ||
+    (p.match_status === 'not_found' && p.screenshot);
+  const papers = isPartial ? (r.recent_papers || []).filter(isChecked)
+                           : (r.recent_papers || []);
+
+  if (isPartial) {
+    html += `<div class="cached-note">部分完成：已核查 ${papers.length} / 共 ${(r.recent_papers || []).length} 篇，仅展示已核查论文（其余按 not_found 记录，可补跑）</div>`;
+  }
+
+  if (papers.length) {
+    const ext = papers[0].openalex_id !== undefined ? 'openalex' : 's2';
+    // 年份筛选选项：取数据中实际出现的年份（降序），各年篇数一并显示
+    const years = [...new Set(papers.map(p => String(p.year || '')))]
+      .filter(y => y).sort().reverse();
+    html += `<div class="card"><h3>近五年论文 · 共 ${papers.length} 篇（逐篇核查，按 GS 被引降序）</h3>
+      <div class="filter-bar">
+        <label for="year-filter">年份筛选</label>
+        <select id="year-filter" onchange="applyYearFilter()">
+          <option value="">全部年份（${papers.length} 篇）</option>
+          ${years.map(y => `<option value="${esc(y)}">${esc(y)} 年（${papers.filter(p => String(p.year) === y).length} 篇）</option>`).join('')}
+        </select>
+      </div>
+      <table>
       <tr><th style="width:36px"></th><th>标题</th><th>年份</th><th>GS 被引</th><th>核查</th><th>${ext === 'openalex' ? 'OpenAlex' : 'S2'} 被引</th><th>来源 / DOI</th></tr>
-      ${r.recent_papers.map(p => {
+      ${papers.map(p => {
         const extCite = ext === 'openalex' ? p.openalex_citations : p.s2_citations;
         const extUrl = ext === 'openalex' ? p.openalex_url : p.s2_url;
-        return `<tr>
-          <td><span class="rank">${esc(p.rank)}</span></td>
+        return `<tr class="paper-row" data-year="${esc(p.year)}">
+          <td><span class="rank" data-global="${esc(p.rank)}">${esc(p.rank)}</span></td>
           <td>${esc(p.title)}</td>
           <td>${esc(p.year)}</td>
           <td>${esc(p.gs_citations)}</td>
@@ -500,10 +556,10 @@ async function loadResult(taskId, fromCache) {
     </table></div>`;
 
     html += `<div class="card"><h3>核查截图</h3><div class="shots-grid">
-      ${r.recent_papers.filter(p => p.screenshot).map(p => `
-        <div class="thumb" onclick="zoom('${shotUrl(taskId, p.screenshot)}')">
+      ${papers.filter(p => p.screenshot).map(p => `
+        <div class="thumb" data-year="${esc(p.year)}" onclick="zoom('${shotUrl(taskId, p.screenshot)}')">
           <img src="${shotUrl(taskId, p.screenshot)}" loading="lazy">
-          <div class="cap">#${esc(p.rank)} ${esc(p.title)}</div>
+          <div class="cap"><span class="rank-num" data-global="${esc(p.rank)}">#${esc(p.rank)}</span> ${esc(p.title)}</div>
         </div>`).join('')}
     </div></div>`;
   }

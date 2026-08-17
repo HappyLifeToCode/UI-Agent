@@ -8,6 +8,17 @@
   单步内会多次重试，每次重试都产生 `llm.request` 事件但不产生上下文内容；
   连续（中间无 context 事件）的 `llm.request` 合并计 1 次有效请求，
   对齐判据不变（有效请求数 == 重组 assistant 消息数）。
+- 2026-08-13：本地产出链路升级为**三段式管线**（scripts/run_tasks.py [M8]）：
+  ① 近五年论文从"被引 Top 10"改为**全量收集**（数量 N 动态，按 GS 被引全局
+  降序编 rank）；② 核查阶段每 10 篇一个独立会话，中间产物落盘
+  （`phase1.json` / `ranked_papers.json` / `checks/paper_NN.json`），
+  result.json 由执行器合并生成（合并成功后 `checks/` 自动清理），`status` 新增
+  `partial`（部分篇目核查会话未完成，按 not_found 记录）；失败一致性三层防线：
+  批末即时合并 + CLI/Web 启动兜底扫描 + Web 查询时懒恢复（统一判据
+  `result_needs_rebuild`：有 fragment 且 result.json 缺失/过时 → 重建）；③ 本地核查链路用 Semantic Scholar（字段
+  `s2_*`，与 `openalex_*` 同义对应）；④ 新增 `<task_id>_report.docx`
+  Word 报告（逐篇详情 + 截图证据，scripts/export_word.py 生成）与
+  `trace_batchNN.zip`（各核查批 trace；契约 `trace.zip` 仍 = 主会话）。
 - 2026-07-29：应下游要求，**恢复作者主页整页截图**（`<task_id>_profile.png`），
   与论文截图并存；screenshots/ 现为 1 张主页截图 + N 张论文截图。
 - 2026-07-28：任务形态扩展为"谷歌学术检索 + OpenAlex 论文核查"。
@@ -126,18 +137,20 @@ Agent 从作者主页抽取的结构化结果：
 - `year`：**字符串**。
 - `top_papers`：按被引数降序，最多 3 篇。
 - `interests`：作者主页列出的全部研究兴趣标签，顺序与页面一致。
-- `recent_papers`：近五年（2021 年及以后）谷歌学术被引 Top 10 论文的
-  OpenAlex 核查结果，按谷歌学术被引数降序，`rank` 从 1 连续编号，
-  不足 10 篇时有几篇列几篇。字段规则：
+- `recent_papers`：近五年（2021 年及以后）全部论文的逐篇核查结果
+  （2026-08-13 起不限 Top 10，数量 N 动态），按谷歌学术被引数降序，
+  `rank` 从 1 连续编号。字段规则：
   - `gs_citations`：谷歌学术被引数，纯整数；
-  - `match_status` ∈ `matched` / `not_found`。OpenAlex 覆盖不全，
+  - `match_status` ∈ `matched` / `not_found`。外部库覆盖不全，
     not_found 属正常情况，**不允许静默丢弃**：not_found 篇目同样占一个
     rank，并截搜索结果页留证；
-  - `match_status = not_found` 时 `openalex_id` / `openalex_url` /
-    `openalex_citations` / `doi` / `journal` 均为 null；
-  - `openalex_citations`：OpenAlex Cited by 数，纯整数；
+  - `match_status = not_found` 时外部核查字段（OpenAlex 链路：
+    `openalex_id` / `openalex_url` / `openalex_citations`；S2 链路：
+    `s2_id` / `s2_url` / `s2_citations`）与 `doi` / `journal` 均为 null；
+  - `openalex_citations` / `s2_citations`：外部库 Cited by 数，纯整数；
   - `screenshot`：对应截图文件名（`<task_id>_paper_NN.png`，NN = rank
-    两位数字），文件必须存在于 `screenshots/` 中。
+    编号，不足两位补零），文件必须存在于 `screenshots/` 中；
+    `status = partial` 时"核查会话未完成"的篇目允许 screenshot 为 null。
 
 ## 4. wire.jsonl（Agent 轨迹）
 
