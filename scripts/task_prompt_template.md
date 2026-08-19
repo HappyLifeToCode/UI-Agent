@@ -104,8 +104,7 @@ async (page) => {
 }
 ```
 
-   某一页最后一行年份 < 2021 即可停止；否则 cstart 改为 100、200… 继续翻页。
-   汇总所有 2021 年及以后的论文，按被引数降序取前 10 篇（不足 10 篇有几篇取几篇）。
+   {{YEAR_RULE}}
    【只统计单篇论文】：谷歌学术有时把整本会议论文集/期刊整期当作一个条目
    挂在作者名下（标题形如 "2024 IEEE/CVF Conference on Computer Vision and
    Pattern Recognition (CVPR)"、"Proceedings of ..."，被引数往往很大）——

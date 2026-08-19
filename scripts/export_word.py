@@ -19,6 +19,8 @@
 字段兼容：recent_papers 同时认 s2_*（Semantic Scholar 链路）和
 openalex_*（OpenAlex 链路）两套命名（如旧数据 task_0001 是 s2 字段）。
 """
+from __future__ import annotations  # Path | None 注解在 Python 3.9 下需延迟求值
+
 import argparse
 import json
 import sys

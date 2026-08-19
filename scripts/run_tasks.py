@@ -171,6 +171,25 @@ def render_prompt(task: dict, template_path: Path = None, extra: dict = None) ->
     return out
 
 
+def year_rule(task: dict, top10: bool = False) -> str:
+    """生成 {{YEAR_RULE}} 占位符文本：task 带 year_exact 时精确单年，否则默认 2021+。
+
+    top10=True 用于 legacy 单会话模板（Top10 口径）；
+    False 用于 phase1 模板（不设数量上限口径）。
+    """
+    if task.get("year_exact"):
+        y = task["year_exact"]
+        stop = (f"按年份降序翻页，当某一页最后一行的年份已小于 {y} 时即可停止"
+                f"（该页中 {y} 年的条目仍要保留）。")
+        scope = f"【只统计 {y} 年这一年发表的论文】，其他年份一律排除"
+    else:
+        stop = "某一页最后一行年份 < 2021 即可停止；否则 cstart 改为 100、200… 继续翻页。"
+        scope = "【汇总所有 2021 年及以后的论文】"
+    if top10:
+        return f"{stop}{scope}，按被引数降序取前 10 篇（不足 10 篇有几篇取几篇）。"
+    return f"{stop}{scope}，不设数量上限——高产学者可能有几十甚至上百篇，全部都要，一篇不能少。"
+
+
 # =============================================================================
 # [M3] Session 定位：确定"本次运行"对应哪个 Kimi 会话
 #   - 主路径：parse_session_id_from_log（解析 CLI 自报的 session id，可靠）
@@ -736,8 +755,9 @@ def run_one_task(task: dict, dry_run: bool = False) -> dict:
     if LEGACY_MODE:
         return _run_one_task_legacy(task, task_dir, start_time)
 
-    # ================= Phase 1：谷歌学术 + 近五年全部论文清单 =================
-    prompt = render_prompt(task, PHASE1_TEMPLATE_PATH)
+    # ================= Phase 1：谷歌学术 + 论文清单（年份口径见 year_rule） =================
+    prompt = render_prompt(task, PHASE1_TEMPLATE_PATH,
+                           extra={"YEAR_RULE": year_rule(task)})
     log_path = LOG_DIR / f"{task_id}.log"
     sessions_before = snapshot_sessions()
     mcp_before = snapshot_mcp_output()
@@ -869,7 +889,8 @@ def _run_one_task_legacy(task: dict, task_dir: Path, start_time) -> dict:
     """旧单会话链路（--template 指定旧模板时使用）：一个会话完成检索+核查，top-10。"""
     task_id = task["task_id"]
     log_path = LOG_DIR / f"{task_id}.log"
-    prompt = render_prompt(task, TEMPLATE_PATH)
+    prompt = render_prompt(task, TEMPLATE_PATH,
+                           extra={"YEAR_RULE": year_rule(task, top10=True)})
     sessions_before = snapshot_sessions()
     mcp_output_before = snapshot_mcp_output()
 

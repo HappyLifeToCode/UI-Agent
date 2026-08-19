@@ -258,6 +258,10 @@
         <label>单位线索(可选)</label>
         <input id="aff" placeholder="New York University">
       </div>
+      <div class="field">
+        <label>论文年份(可选,只统计该年;不填默认近五年)</label>
+        <input id="year_from" type="number" placeholder="如 2023" min="1990" max="2030">
+      </div>
     </div>
 
     <div>
@@ -389,6 +393,8 @@ async function doSearch() {
   if (!name) return;
   const preset = $('preset').value;
   const body = { person_name: name, affiliation_hint: $('aff').value.trim() };
+  const yf = parseInt($('year_from').value);
+  if (yf) body.year_from = yf;
   if (preset) {
     if (!$('api_key').value.trim()) { showStatus('failed', '选择了模型预设,必须填写 API Key'); return; }
     body.model_name = $('model_name').value.trim();
@@ -481,6 +487,7 @@ async function loadResult(taskId, fromCache) {
   // 任务操作条:生成回放 / 导出
   html += `<div class="card task-actions">
     <button class="action-btn" id="replay-btn" onclick="genReplay('${taskId}')">生成回放 ↗</button>
+    <a class="action-btn" href="/api/export_word/${taskId}" download>导出 Word</a>
     <a class="action-btn" href="/api/export/${taskId}" download>导出 ZIP</a>
     <a class="action-link" href="/api/export/${taskId}?include_trace=1">含 trace.zip(数百 MB)</a>
     <span id="replay-state"></span>

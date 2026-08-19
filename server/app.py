@@ -87,6 +87,7 @@ def _find_cache(person_name: str):
 class SearchRequest(BaseModel):
     person_name: str
     affiliation_hint: str = ""
+    year_from: int = 0               # 论文年份:只统计该年份(0 = 默认近五年)
     # 可选的模型配置：非空时通过 KIMI_MODEL_* 环境变量临时指定模型
     # （kimi-code 官方通道，不改 config.toml；api_key 只存在于进程内存，
     #  不落盘、不写进 task.json / mapping.jsonl）
@@ -124,6 +125,10 @@ def search(req: SearchRequest):
         "person_name": name,
         "affiliation_hint": req.affiliation_hint.strip(),
     }
+    if req.year_from:
+        if not (1990 <= req.year_from <= 2030):
+            raise HTTPException(400, "year_from 年份不合法")
+        task["year_exact"] = req.year_from
     with _jobs_lock:
         _jobs[task["task_id"]] = {
             "state": "queued", "detail": "排队中", "task": task,
@@ -246,6 +251,26 @@ def export_task(task_id: str, include_trace: int = 0):
     return FileResponse(tmp.name, filename=f"{task_id}.zip",
                         media_type="application/zip",
                         background=BackgroundTask(os.remove, tmp.name))
+
+
+@app.get("/api/export_word/{task_id}")
+def export_word_api(task_id: str):
+    """生成并下载该任务的 Word 报告(复用 scripts/export_word.py 的 generate_report)。"""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", task_id):
+        raise HTTPException(400, "非法 task_id")
+    task_dir = DATA_DIR / task_id
+    if not (task_dir / "result.json").exists():
+        raise HTTPException(404, "缺少 result.json，无法生成报告")
+    try:
+        import export_word
+        out = export_word.generate_report(task_dir)
+    except Exception as e:
+        raise HTTPException(500, f"生成 Word 报告失败: {e}")
+    if not out or not Path(out).exists():
+        raise HTTPException(500, "报告生成失败")
+    return FileResponse(
+        str(out), filename=Path(out).name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 def _latest_records():
