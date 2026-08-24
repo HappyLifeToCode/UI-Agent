@@ -28,12 +28,32 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
+from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
 SCREENSHOT_WIDTH = Cm(15)  # 正文宽度约 16cm，留一点边距
+
+# 全文统一字体：西文/数字 Times New Roman，中文正文宋体、标题黑体。
+# python-docx 的 font.name 只设 w:rFonts 的 ascii/hAnsi，中文字体必须
+# 显式写 w:eastAsia，否则中文回落到模板默认字体，同一段中西文粗细不一。
+BODY_ASCII_FONT = "Times New Roman"
+BODY_EASTASIA_FONT = "宋体"
+HEADING_EASTASIA_FONT = "黑体"
+
+
+def _set_style_font(style, ascii_font: str, eastasia_font: str, size=None):
+    """统一设置样式的西文与中文字体（eastAsia 必须走 XML 显式设置）。"""
+    style.font.name = ascii_font
+    rfonts = style.element.get_or_add_rPr().get_or_add_rFonts()
+    # 标题样式自带 asciiTheme/eastAsiaTheme 主题引用，删除以免与显式字体歧义
+    for attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+        rfonts.attrib.pop(qn(f"w:{attr}"), None)
+    rfonts.set(qn("w:eastAsia"), eastasia_font)
+    if size is not None:
+        style.font.size = size
 
 
 def _ext_fields(paper: dict):
@@ -85,8 +105,9 @@ def generate_report(task_dir: Path) -> Path | None:
     shots = task_dir / "screenshots"
 
     doc = Document()
-    doc.styles["Normal"].font.name = "Calibri"
-    doc.styles["Normal"].font.size = Pt(10.5)
+    _set_style_font(doc.styles["Normal"], BODY_ASCII_FONT, BODY_EASTASIA_FONT, Pt(10.5))
+    for _name in ("Title", "Heading 1", "Heading 2", "Heading 3"):
+        _set_style_font(doc.styles[_name], BODY_ASCII_FONT, HEADING_EASTASIA_FONT)
 
     # ---- 标题 ----
     doc.add_heading(f"{result.get('person_name') or task_id} · 学者论文核查报告", level=0)
