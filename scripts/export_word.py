@@ -12,7 +12,8 @@
 报告结构：
     标题（学者姓名 + task_id + 生成时间）
     一、作者信息（单位/兴趣/总被引/h-index/i10-index/主页链接 + 主页整页截图）
-    二、近五年论文（共 N 篇，按年份分小节，年内按 GS 被引降序）
+    二、近五年论文总表（年内序号/标题/GS被引/核查状态，年份分隔行带篇数）
+    三、逐篇核查详情（按年份分小节，年内按 GS 被引降序）
         每篇：全局被引排名、标题、年份、GS 被引、核查状态、S2/OpenAlex 数据、
         DOI、期刊、备注，下方嵌入对应截图证据。
 
@@ -94,6 +95,46 @@ def _add_picture_or_note(doc, path: Path, note_prefix: str):
         doc.add_paragraph(f"【{note_prefix}缺失：{path.name}】")
 
 
+def _add_summary_table(doc, papers):
+    """近五年论文总表：年内序号 / 标题 / GS 被引 / 核查状态，按年份分隔。
+
+    年份行跨列合并、加粗并放大字号，带该年篇数（如 "2026 年（3 篇）"）；
+    年内序号与第三部分逐篇详情的 #N 一致（年内按 GS 被引降序）。
+    """
+    from collections import Counter
+    year_counts = Counter(str(p.get("year") or "未知年份") for p in papers)
+
+    table = doc.add_table(rows=1, cols=4)
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    for i, text in enumerate(("序号", "论文标题", "GS 被引", "核查状态")):
+        hdr[i].text = text
+        hdr[i].paragraphs[0].runs[0].font.bold = True
+
+    current_year = None
+    year_rank = 0
+    for p in papers:  # 调用前已按 年份降序 + 年内 GS 被引降序 排好
+        year = str(p.get("year") or "未知年份")
+        if year != current_year:
+            current_year = year
+            year_rank = 0
+            row = table.add_row()
+            merged = row.cells[0]
+            for c in row.cells[1:]:
+                merged = merged.merge(c)
+            merged.text = f"{year} 年（{year_counts[year]} 篇）"
+            run = merged.paragraphs[0].runs[0]
+            run.font.bold = True
+            run.font.size = Pt(12)
+        year_rank += 1
+        cells = table.add_row().cells
+        cells[0].text = str(year_rank)
+        cells[1].text = p.get("title") or "(无标题)"
+        cells[2].text = str(p.get("gs_citations") if p.get("gs_citations") is not None else "-")
+        cells[3].text = str(p.get("match_status") or "-")
+    return table
+
+
 def generate_report(task_dir: Path) -> Path | None:
     """为单个任务目录生成 <task_id>_report.docx，返回路径；result.json 缺失返回 None。"""
     task_dir = Path(task_dir)
@@ -130,9 +171,13 @@ def generate_report(task_dir: Path) -> Path | None:
     doc.add_paragraph()
     _add_picture_or_note(doc, shots / f"{task_id}_profile.png", "作者主页截图")
 
-    # ---- 二、近五年论文（按年份分小节） ----
+    # ---- 二、近五年论文总表 ----
     papers = _sort_papers(result.get("recent_papers") or [])
-    doc.add_heading(f"二、近五年论文（共 {len(papers)} 篇，逐篇核查）", level=1)
+    doc.add_heading(f"二、近五年论文总表（共 {len(papers)} 篇）", level=1)
+    _add_summary_table(doc, papers)
+
+    # ---- 三、逐篇核查详情（按年份分小节） ----
+    doc.add_heading("三、逐篇核查详情", level=1)
 
     current_year = None
     year_rank = 0  # 年内序号（从 1 开始，年内按 GS 被引降序；全局被引排名见详情表）
