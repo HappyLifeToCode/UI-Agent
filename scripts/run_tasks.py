@@ -663,6 +663,7 @@ def merge_result(task_dir: Path, cleanup: bool = False):
             "openalex_citations": frag.get("openalex_citations"),
             "doi": frag.get("doi"),
             "journal": frag.get("journal"),
+            "abstract": frag.get("abstract"),
             "screenshot": frag.get("screenshot"),
             "note": frag.get("note"),
         }

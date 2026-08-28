@@ -90,6 +90,7 @@ async (page) => {
   "s2_citations": 0,
   "doi": "10.xxxx/xxxx",
   "journal": "期刊或来源名称",
+  "abstract": "论文摘要全文（按章节边界提取的完整 Abstract 段落）",
   "screenshot": "{{TASK_ID}}_paper_NN.png",
   "note": null
 }
@@ -99,6 +100,25 @@ async (page) => {
    - match_status ∈ matched / not_found。matched 必须填真实 Semantic Scholar 数据
      （s2_id、s2_url、s2_citations、doi、journal）；not_found 这五字段填 null，
      但 screenshot 必须有对应留证截图。
+   - abstract：matched 时提取论文摘要【全文】，不要按固定字符数截断 ——
+     用一次 browser_run_code 按章节边界截取（开头标记 "Abstract"，
+     结尾是下一个章节标题，照抄下面代码）：
+
+```js
+async (page) => {
+  return await page.evaluate(() => {
+    const m = /Abstract\s*\n([\s\S]*?)\n\s*(?:Figures and Tables|Topics|Citations|References|Related Papers|Venue)/
+      .exec(document.body.innerText);
+    return m ? m[1].trim().slice(0, 5000) : null;  // null = 正文里没读到摘要
+  });
+}
+```
+
+     上面代码返回 null（正文里没有 Abstract 段落）才填 null，不要自己编造；
+     返回超 5000 字符属异常，截断即可并在 note 说明"摘要超长截断"。
+     这一步只是读当前页面本地文本，不触发网络请求。
+     not_found（含限流）时 abstract 填 null。摘要用于后续离线汇总分析，
+     务必如实完整摘录。
    - 数值字段（gs_citations、s2_citations）必须是纯整数：去逗号、去单位。
      year 保留为字符串。
    - 【每篇核查完立即写该篇 fragment，再处理下一篇】——不要攒到最后一起写，
