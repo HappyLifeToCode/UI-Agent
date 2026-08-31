@@ -75,7 +75,7 @@
   .field input::placeholder { color: #55555c; }
   .field select { appearance: none; cursor: pointer; }
 
-  #btn, #cnki-btn {
+  #btn {
     width: 100%; border: none; cursor: pointer; font-family: "Archivo Black", sans-serif;
     background: var(--red); color: #fff; font-size: 17px; letter-spacing: .18em;
     padding: 15px 0 13px; text-transform: uppercase;
@@ -84,9 +84,6 @@
   }
   #btn:hover:not(:disabled) { background: var(--red-dark); }
   #btn:disabled { background: #4a4a50; cursor: not-allowed; color: #9a9aa0; }
-  #cnki-btn { background: #fff; color: var(--ink); }
-  #cnki-btn:hover:not(:disabled) { background: var(--red); color: #fff; }
-  #cnki-btn:disabled { background: #4a4a50; color: #9a9aa0; cursor: not-allowed; }
 
   .side-foot { margin-top: auto; font-size: 11px; color: #55555c; line-height: 1.7; }
 
@@ -307,19 +304,6 @@
     </div>
 
     <button id="btn" onclick="doSearch()">SEARCH →</button>
-
-    <div>
-      <div class="block-title">CNKI / 知网关键词</div>
-      <div class="field">
-        <label>关键词 *</label>
-        <input id="cnki_kw" placeholder="如:芍药甘草汤">
-      </div>
-      <div class="field">
-        <label>采集篇数(1-100,默认 20)</label>
-        <input id="cnki_limit" type="number" value="20" min="1" max="100">
-      </div>
-      <button id="cnki-btn" onclick="doCnki()">CNKI 检索 →</button>
-    </div>
 
     <div class="side-foot">
       模型配置经 KIMI_MODEL_* 环境变量注入,仅存在于内存,不写配置文件。<br>
@@ -611,100 +595,6 @@ async function genReplay(taskId) {
     st.textContent = '生成失败:' + e.message;
   }
   btn.disabled = false;
-}
-
-/* ---------- CNKI 关键词检索(药企横向) ---------- */
-let cnkiTimer = null;
-
-async function doCnki() {
-  const kw = $('cnki_kw').value.trim();
-  if (!kw) return;
-  $('cnki-btn').disabled = true;
-  clearInterval(cnkiTimer);
-  startTs = Date.now();
-  showStatus('queued', '提交 CNKI 任务中…');
-  try {
-    const resp = await fetch('/api/cnki_search', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ keyword: kw, limit: parseInt($('cnki_limit').value) || 20 })
-    });
-    if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
-    const data = await resp.json();
-    if (data.cached) {
-      await loadCnkiResult(kw);
-      showStatus('done', '该关键词已采集过,以下为缓存结果。');
-      $('cnki-btn').disabled = false;
-    } else {
-      cnkiTimer = setInterval(() => pollCnki(data.task_id, kw), 4000);
-      pollCnki(data.task_id, kw);
-    }
-  } catch (e) {
-    showStatus('failed', '提交失败:' + e.message);
-    $('cnki-btn').disabled = false;
-  }
-}
-
-async function pollCnki(taskId, kw) {
-  try {
-    const s = await (await fetch('/api/status/' + taskId)).json();
-    showStatus(s.state, s.detail + (s.state === 'running' ? '' : ''));
-    if (s.state === 'done') {
-      clearInterval(cnkiTimer);
-      await loadCnkiResult(kw);
-      $('cnki-btn').disabled = false;
-    } else if (s.state === 'failed') {
-      clearInterval(cnkiTimer);
-      // partial 也有产出,尝试展示已采部分
-      try { await loadCnkiResult(kw); } catch (_) {}
-      $('cnki-btn').disabled = false;
-    }
-  } catch (e) { /* 下轮再试 */ }
-}
-
-async function loadCnkiResult(kw) {
-  const resp = await fetch('/api/cnki_result/' + encodeURIComponent(kw));
-  if (!resp.ok) { showStatus('failed', '读取结果失败'); return; }
-  const d = await resp.json();
-  const papers = d.papers || [];
-  const tid = 'cnki_' + kw.replace(/[^\w一-鿿-]+/g, '_');
-
-  // 总表:序号/标题锚点链接到下方摘要全文(锚点 id=abs_NN,JSON 化时字段关联不变)
-  let html = `<div class="card task-actions">
-    <a class="action-btn" href="/api/cnki_word/${encodeURIComponent(kw)}" download>导出 Word</a>
-    <a class="action-btn" href="/data/${tid}/papers.json" download>导出 JSON</a>
-    <span class="action-link">关键词:${esc(d.keyword || kw)} · 命中 ${esc(d.total_results || '-')} 条 · 已采 ${papers.length} 篇 · 点击表内序号/标题跳对应摘要</span>
-  </div>`;
-
-  html += `<div class="card"><h3>一、文献总表</h3><table>
-    <tr><th style="width:36px"></th><th>标题</th><th>作者</th><th>期刊/来源</th><th>发表时间</th><th>关键词</th></tr>
-    ${papers.map(p => {
-      const anchor = `abs_${String(p.rank).padStart(2, '0')}`;
-      return `<tr>
-        <td><a class="rank" href="#${anchor}" title="跳至摘要">${esc(p.rank)}</a></td>
-        <td><a href="#${anchor}">${esc(p.title || '(无标题)')}</a>${p.note ? `<br><span class="doi">(${esc(p.note)})</span>` : ''}</td>
-        <td>${esc(p.authors || '-')}</td>
-        <td>${esc(p.source || '-')}</td>
-        <td>${esc(p.date || '-')}</td>
-        <td class="doi">${esc((p.keywords || []).join('；'))}</td>
-      </tr>`;
-    }).join('')}
-  </table></div>`;
-
-  html += `<div class="card"><h3>二、摘要全文</h3>
-    ${papers.map(p => {
-      const anchor = `abs_${String(p.rank).padStart(2, '0')}`;
-      return `<div id="${anchor}" style="scroll-margin-top:20px">
-        <h3 style="font-size:15px;margin:18px 0 4px">#${esc(p.rank)} ${esc(p.title || '(无标题)')}</h3>
-        <div class="doi" style="margin-bottom:6px">${esc(p.authors || '-')}｜${esc(p.source || '-')}｜${esc(p.date || '-')} · <a href="#top" onclick="window.scrollTo(0,0);return false">↑ 回总表</a></div>
-        <p style="font-size:13px;line-height:1.7">${esc(p.abstract || '（知网未提供摘要）')}</p>
-      </div>`;
-    }).join('')}
-  </div>`;
-
-  $('result').innerHTML = html;
-  showStatus('done', `CNKI「${kw}」采集完成,共 ${papers.length} 篇。`);
-  window.scrollTo(0, 0);
 }
 
 /* 总表→摘要的锚点跳转:.main 是独立滚动容器,原生 fragment 定位不生效,改 JS 滚动 */

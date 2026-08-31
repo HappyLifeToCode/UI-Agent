@@ -260,9 +260,13 @@ def shots(task_id: str, filename: str):
     return FileResponse(str(p))
 
 
+# 根页面:默认 GS 学者检索;--cnki 启动时换成 CNKI 专用页(独立端口独立 UI)
+PAGE = "index.html"
+
+
 @app.get("/")
 def index():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+    return FileResponse(str(STATIC_DIR / PAGE))
 
 
 # ---- 可视化审查系统(第二阶段;数据口径见 docs/ui_data_interface.md) ----------
@@ -604,5 +608,15 @@ threading.Thread(target=_worker, daemon=True).start()
 print(f"[scholar-web] 模板={run_tasks.TEMPLATE_PATH.name} 模型标签={run_tasks.MODEL}")
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+
+    parser = argparse.ArgumentParser(description="Scholar Web 服务")
+    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--cnki", action="store_true",
+                        help="CNKI 专用模式:根页面 served 为 cnki.html(建议配独立端口,如 --port 8002)")
+    args = parser.parse_args()
+    if args.cnki:
+        PAGE = "cnki.html"  # 模块级变量,直接赋值即可
+        print("[scholar-web] CNKI 模式:根页面 = cnki.html")
+    uvicorn.run(app, host="127.0.0.1", port=args.port)

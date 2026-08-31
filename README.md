@@ -10,8 +10,9 @@
 
 ```
 tasks/          任务清单（tasks.jsonl）
-scripts/        执行脚本（run_tasks.py 批量执行器、prompt 模板、
-                playwright_mcp_config.json / stealth_init.js 反检测配置）
+scripts/        执行脚本（run_tasks.py 批量执行器、run_cnki_tasks.py 知网执行器、
+                prompt 模板、playwright_mcp_config.json / stealth_init.js 反检测配置）
+server/         Web 演示（GS 学者检索 + CNKI 关键词检索两个独立页面）
 data/           产出数据（不进 Git，仅保留结构）
 docs/           文档（QA1.md 环境搭建 / log1.md 操作手册 / FORMAT.md 格式契约）
 qa/             质检工具（validate_data.py）
@@ -120,6 +121,29 @@ python qa/validate_data.py --task-id task_0003     # 只查某条
 - 下游转换前必读 **[docs/FORMAT.md](docs/FORMAT.md)**——逐字段的格式契约
   （目录结构、result.json / wire.jsonl / mapping.jsonl / trace.zip 定义、
   断档红线、mapping 读取规则）。
+
+## 知网（CNKI）关键词采集
+
+与 GS 学者链路完全独立：按**关键词**（非人名）检索知网，逐篇采集题录 + 摘要全文。
+
+**启动（独立端口 + 独立页面）：**
+
+```bash
+python server/app.py --cnki --port 8002      # 浏览器打开 http://localhost:8002
+```
+
+输入关键词与篇数（默认 20）即可；已采过的关键词自动走缓存。页面上：
+
+- **文献总表**：序号/标题点击跳转到下方对应摘要全文（锚点 `abs_NN`）；
+- **导出汇总表（Word）**：总表序号/标题为内部超链接，直跳摘要附录；
+- **导出 JSON**：`papers.json` 逐篇含 rank + abstract，序号↔摘要关联以字段形式保留。
+
+产物在 `data/cnki_<关键词>/`：`papers/paper_NN.json`（逐篇 fragment，断点续采）、
+`papers.json`（合并结果）、`*_汇总表.docx`。批量跑批用
+`python scripts/run_cnki_tasks.py --task <关键词> --limit 20`。
+
+> GS 页面仍在 8001：`python server/app.py`。两个页面共用执行器锁
+> （`data/.runner.lock`），同一时刻只有一边能采集，属反爬保护而非故障。
 
 ## 文档导航
 
