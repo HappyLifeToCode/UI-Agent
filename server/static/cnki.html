@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知网文献采集</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%239e2b1e'/%3E%3Ctext x='16' y='23' font-family='SimSun' font-size='18' fill='%23faf7ef' text-anchor='middle'%3E采%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf7ef;        /* 宣纸 */
+    --paper-deep: #f3eee1;
+    --ink: #2b2b2b;          /* 墨 */
+    --ink-soft: #5a564e;     /* 淡墨 */
+    --ink-faint: #8d8778;    /* 更淡 */
+    --cinnabar: #9e2b1e;     /* 朱砂 */
+    --rule: #d8cfc0;         /* 纸纹线 */
+    --white: #fffdf8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
+    background: var(--paper); color: var(--ink);
+    -webkit-font-smoothing: antialiased; line-height: 1.7;
+  }
+  a { color: var(--cinnabar); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .page { max-width: 920px; margin: 0 auto; padding: 0 28px 100px; }
+
+  /* 页眉:仿线装书的书口双线 */
+  header.masthead {
+    border-bottom: 3px double var(--ink); padding: 34px 0 22px; margin-bottom: 36px;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 20px;
+  }
+  .masthead .titles h1 { font-size: 30px; font-weight: 700; letter-spacing: .18em; }
+  .masthead .titles p { color: var(--ink-faint); font-size: 13px; margin-top: 6px; letter-spacing: .1em; }
+  /* 朱砂印章 */
+  .seal {
+    width: 58px; height: 58px; background: var(--cinnabar); color: var(--paper);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 700; border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.18); flex-shrink: 0;
+    transform: rotate(-2deg);
+  }
+
+  /* 检索区 */
+  .panel {
+    background: var(--white); border: 1px solid var(--rule);
+    padding: 26px 30px; margin-bottom: 28px;
+  }
+  .panel h2 {
+    font-size: 15px; font-weight: 600; letter-spacing: .3em; color: var(--ink-soft);
+    border-left: 4px solid var(--cinnabar); padding-left: 12px; margin-bottom: 18px;
+  }
+  .form-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 220px; }
+  .field label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; letter-spacing: .08em; }
+  .field input {
+    width: 100%; padding: 11px 14px; font-size: 15px; font-family: inherit;
+    background: var(--paper); border: 1px solid var(--rule); color: var(--ink);
+    outline: none; transition: border-color .2s;
+  }
+  .field input:focus { border-color: var(--cinnabar); }
+  .field.narrow { flex: 0 0 130px; min-width: 110px; }
+  button.search {
+    font-family: inherit; font-size: 16px; letter-spacing: .35em; text-indent: .35em;
+    padding: 11px 34px; cursor: pointer; color: var(--paper);
+    background: var(--ink); border: none; transition: background .2s;
+  }
+  button.search:hover:not(:disabled) { background: var(--cinnabar); }
+  button.search:disabled { background: var(--ink-faint); cursor: wait; }
+
+  /* 状态行 */
+  #status-line {
+    display: none; font-size: 14px; color: var(--ink-soft);
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    padding: 12px 4px; margin-bottom: 28px;
+  }
+  #status-line .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--cinnabar); margin-right: 8px; vertical-align: 1px;
+    animation: breathe 1.6s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { opacity: .25; } }
+  #status-line.done .dot { animation: none; background: #4a6b3a; }
+  #status-line.failed .dot { animation: none; background: var(--cinnabar); }
+
+  /* 结果区 */
+  .result-block { margin-bottom: 34px; }
+  .result-block > h2 {
+    font-size: 17px; font-weight: 700; letter-spacing: .2em; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .result-block > h2::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .meta-line { font-size: 13px; color: var(--ink-faint); margin-bottom: 14px; }
+  .exports { margin-bottom: 16px; }
+  .exports a {
+    display: inline-block; font-size: 13px; letter-spacing: .1em;
+    border: 1px solid var(--ink); color: var(--ink); padding: 6px 18px; margin-right: 10px;
+    transition: all .2s;
+  }
+  .exports a:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--white); border: 1px solid var(--rule); }
+  th {
+    background: var(--paper-deep); font-weight: 600; color: var(--ink-soft);
+    font-size: 13px; letter-spacing: .12em; text-align: left;
+    padding: 9px 12px; border-bottom: 2px solid var(--ink); white-space: nowrap;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--paper); }
+  td .seq {
+    display: inline-flex; min-width: 26px; height: 26px; align-items: center; justify-content: center;
+    border: 1px solid var(--rule); font-size: 13px; color: var(--ink-soft);
+  }
+  a.seq-link:hover { text-decoration: none; }
+  a.seq-link:hover .seq { border-color: var(--cinnabar); color: var(--cinnabar); }
+  .kw { font-size: 12.5px; color: var(--ink-faint); }
+
+  /* 摘要全文 */
+  .abstract-item { background: var(--white); border: 1px solid var(--rule); padding: 22px 26px; margin-bottom: 18px; scroll-margin-top: 24px; }
+  .abstract-item h3 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .abstract-item .sub { font-size: 13px; color: var(--ink-faint); margin-bottom: 12px; }
+  .abstract-item .sub a { font-size: 12.5px; }
+  .abstract-item p.text { font-size: 14.5px; text-align: justify; }
+
+  footer {
+    margin-top: 60px; padding-top: 16px; border-top: 3px double var(--ink);
+    font-size: 12px; color: var(--ink-faint); letter-spacing: .1em;
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="titles">
+      <h1>知网文献采集</h1>
+      <p>按关键词检索中国知网(CNKI),逐篇采集题录与摘要全文</p>
+    </div>
+    <div class="seal">采</div>
+  </header>
+
+  <section class="panel">
+    <h2>检 索</h2>
+    <div class="form-row">
+      <div class="field">
+        <label>关键词</label>
+        <input id="cnki_kw" placeholder="如:药物相互作用" autofocus>
+      </div>
+      <div class="field narrow">
+        <label>篇数(默认 20)</label>
+        <input id="cnki_limit" type="number" value="20" min="1" max="100">
+      </div>
+      <button class="search" id="btn" onclick="doCnki()">检 索</button>
+    </div>
+    <div style="margin-top:22px;border-top:1px solid var(--rule);padding-top:18px">
+      <h2 style="font-size:15px;font-weight:600;letter-spacing:.3em;color:var(--ink-soft);border-left:4px solid var(--cinnabar);padding-left:12px;margin-bottom:14px">批 量 检 索</h2>
+      <div class="field" style="margin-bottom:14px">
+        <label>每行一个关键词,提交后串行排队</label>
+        <textarea id="cnki_batch" rows="4" placeholder="药物相互作用&#10;中药配伍禁忌&#10;芍药甘草汤"
+          style="width:100%;padding:11px 14px;font-size:14px;font-family:inherit;background:var(--paper);border:1px solid var(--rule);color:var(--ink);outline:none;resize:vertical"></textarea>
+      </div>
+      <button class="search" id="batch-btn" style="background:var(--ink-soft)" onclick="doCnkiBatch()">批量检索 →</button>
+    </div>
+  </section>
+
+  <div id="status-line"><span class="dot"></span><span id="status-text"></span></div>
+
+  <div id="result"></div>
+
+  <footer>
+    <span>数据来源:中国知网(CNKI) · 默认相关度排序</span>
+    <span>逐篇沉淀 · 断点续采 · 可导出 Word 与 JSON</span>
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null, startTs = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function setStatus(state, text) {
+  const el = $('status-line');
+  el.style.display = 'block';
+  el.className = state || '';
+  $('status-text').textContent = text || '';
+  if (state === 'running' && startTs) {
+    const s = Math.floor((Date.now() - startTs) / 1000);
+    $('status-text').textContent += `(已进行 ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')})`;
+  }
+}
+
+async function doCnki() {
+  const kw = $('cnki_kw').value.trim();
+  if (!kw) return;
+  $('btn').disabled = true;
+  clearInterval(timer);
+  startTs = Date.now();
+  setStatus('running', '提交任务中…');
+  $('result').innerHTML = '';
+  try {
+    const resp = await fetch('/api/cnki_search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ keyword: kw, limit: parseInt($('cnki_limit').value) || 20 })
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+    const data = await resp.json();
+    if (data.cached) {
+      await loadCnkiResult(kw);
+      setStatus('done', '该关键词已采集过,以下为缓存结果。');
+      $('btn').disabled = false;
+    } else {
+      timer = setInterval(() => pollCnki(data.task_id, kw), 4000);
+      pollCnki(data.task_id, kw);
+    }
+  } catch (e) {
+    setStatus('failed', '提交失败:' + e.message);
+    $('btn').disabled = false;
+  }
+}
+
+async function pollCnki(taskId, kw) {
+  try {
+    const resp = await fetch('/api/status/' + taskId);
+    if (resp.status === 404) {
+      clearInterval(timer);
+      setStatus('failed', '任务状态丢失(服务可能重启过),重新检索该关键词即断点续采。');
+      $('btn').disabled = false;
+      return;
+    }
+    const s = await resp.json();
+    if (s.state === 'unknown') {
+      clearInterval(timer);
+      setStatus('failed', s.detail);
+      $('btn').disabled = false;
+      return;
+    }
+    setStatus(s.state, s.detail);
+    if (s.state === 'done') {
+      clearInterval(timer);
+      await loadCnkiResult(kw);
+      $('btn').disabled = false;
+    } else if (s.state === 'failed') {
+      clearInterval(timer);
+      try { await loadCnkiResult(kw); } catch (_) {}
+      $('btn').disabled = false;
+    }
+  } catch (e) { /* 下轮再试 */ }
+}
+
+async function loadCnkiResult(kw) {
+  const resp = await fetch('/api/cnki_result/' + encodeURIComponent(kw));
+  if (!resp.ok) { setStatus('failed', '读取结果失败'); return; }
+  const d = await resp.json();
+  const papers = d.papers || [];
+  const tid = 'cnki_' + kw.replace(/[^\w一-鿿-]+/g, '_');
+
+  let html = `<div class="result-block">
+    <h2>一、文献总表</h2>
+    <div class="exports">
+      <a href="/api/cnki_word/${encodeURIComponent(kw)}" download>导出汇总表(Word)</a>
+      <a href="/data/${tid}/papers.json" download>导出 JSON</a>
+    </div>
+    <div class="meta-line">关键词「${esc(d.keyword || kw)}」 · 知网命中 ${esc(d.total_results || '-')} 条 · 本次采集 ${papers.length} 篇 · 点击序号或标题跳至对应摘要</div>
+    <table>
+      <tr><th style="width:44px">序号</th><th>标题</th><th>作者</th><th>期刊 / 来源</th><th>发表时间</th><th>关键词</th></tr>
+      ${papers.map(p => {
+        const anchor = `abs_${String(p.rank).padStart(2, '0')}`;
+        return `<tr>
+          <td><a class="seq-link" href="#${anchor}" title="跳至摘要全文"><span class="seq">${esc(p.rank)}</span></a></td>
+          <td><a href="#${anchor}">${esc(p.title || '(无标题)')}</a>${p.note ? `<br><span class="kw">(${esc(p.note)})</span>` : ''}</td>
+          <td>${esc(p.authors || '-')}</td>
+          <td>${esc(p.source || '-')}</td>
+          <td style="white-space:nowrap">${esc(p.date || '-')}</td>
+          <td class="kw">${esc((p.keywords || []).join(';'))}</td>
+        </tr>`;
+      }).join('')}
+    </table>
+  </div>`;
+
+  html += `<div class="result-block">
+    <h2>二、摘要全文</h2>
+    ${papers.map(p => {
+      const anchor = `abs_${String(p.rank).padStart(2, '0')}`;
+      return `<div class="abstract-item" id="${anchor}">
+        <h3>#${esc(p.rank)} ${esc(p.title || '(无标题)')}</h3>
+        <div class="sub">${esc(p.authors || '-')} ｜ ${esc(p.source || '-')} ｜ ${esc(p.date || '-')} · <a href="#top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">回到总表 ↑</a></div>
+        <p class="text">${esc(p.abstract || '(知网未提供摘要)')}</p>
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  $('result').innerHTML = html;
+  setStatus('done', `采集完成,共 ${papers.length} 篇。`);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* 批量队列 */
+let batchJobs = [], batchTimer = null;
+
+async function doCnkiBatch() {
+  const kws = $('cnki_batch').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!kws.length) return;
+  $('batch-btn').disabled = true;
+  batchJobs = [];
+  for (const kw of kws) {
+    const job = { kw, taskId: null, state: 'queued', detail: '提交中…' };
+    batchJobs.push(job);
+    try {
+      const resp = await fetch('/api/cnki_search', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ keyword: kw, limit: parseInt($('cnki_limit').value) || 20 })
+      });
+      if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+      const data = await resp.json();
+      job.taskId = data.task_id;
+      if (data.cached) { job.state = 'done'; job.detail = '缓存命中'; }
+      else job.detail = '排队中';
+    } catch (e) {
+      job.state = 'failed'; job.detail = '提交失败:' + e.message;
+    }
+    renderCnkiBatch();
+  }
+  batchTimer = setInterval(pollCnkiBatch, 5000);
+  pollCnkiBatch();
+}
+
+function renderCnkiBatch() {
+  const doneN = batchJobs.filter(j => j.state === 'done').length;
+  const rows = batchJobs.map((j, i) => {
+    const spinning = (j.state === 'running' || j.state === 'queued');
+    const err = (j.state === 'failed' || j.state === 'lost');
+    const action = j.state === 'done'
+      ? `<a href="javascript:void(0)" onclick="viewCnkiBatch(${i})">查看结果 →</a>`
+      : (j.state === 'lost'
+        ? `<a href="javascript:void(0)" onclick="resubmitCnki(${i})">断点续采 →</a>`
+        : '-');
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${esc(j.kw)}</td>
+      <td>${esc(j.taskId || '-')}</td>
+      <td>${spinning ? '<span class="dot" style="animation:breathe 1.6s ease-in-out infinite"></span>' : ''}
+          <span style="${err ? 'color:var(--cinnabar)' : ''}">${esc(j.detail)}</span></td>
+      <td>${action}</td>
+    </tr>`;
+  }).join('');
+  $('result').innerHTML = `<div class="result-block">
+    <h2>批量任务(${doneN}/${batchJobs.length} 完成)</h2>
+    <table>
+      <tr><th style="width:44px">序号</th><th>关键词</th><th>任务 ID</th><th>状态</th><th></th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+async function pollCnkiBatch() {
+  for (const j of batchJobs) {
+    if (!j.taskId || j.state === 'done' || j.state === 'failed' || j.state === 'lost') continue;
+    try {
+      const resp = await fetch('/api/status/' + j.taskId);
+      if (resp.status === 404) {
+        j.state = 'lost';
+        j.detail = '状态丢失(服务重启?),可断点续采';
+        continue;
+      }
+      const s = await resp.json();
+      if (s.state === 'unknown') { j.state = 'lost'; j.detail = s.detail; continue; }
+      j.state = s.state;
+      j.detail = s.detail || '';
+    } catch (e) { /* 下轮再试 */ }
+  }
+  renderCnkiBatch();
+  if (batchJobs.every(j => ['done', 'failed', 'lost'].includes(j.state))) {
+    clearInterval(batchTimer);
+    $('batch-btn').disabled = false;
+  }
+}
+
+async function resubmitCnki(i) {
+  const j = batchJobs[i];
+  if (!j) return;
+  try {
+    const resp = await fetch('/api/cnki_search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ keyword: j.kw, limit: parseInt($('cnki_limit').value) || 20 })
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+    const data = await resp.json();
+    j.taskId = data.task_id;
+    j.state = data.cached ? 'done' : 'queued';
+    j.detail = data.cached ? '缓存命中' : '排队中(断点续采)';
+  } catch (e) {
+    j.state = 'failed';
+    j.detail = '重新提交失败:' + e.message;
+  }
+  renderCnkiBatch();
+  clearInterval(batchTimer);
+  batchTimer = setInterval(pollCnkiBatch, 5000);
+}
+
+async function viewCnkiBatch(i) {
+  await loadCnkiResult(batchJobs[i].kw);
+  const back = document.createElement('div');
+  back.className = 'meta-line';
+  back.innerHTML = `<a href="javascript:void(0)" onclick="renderCnkiBatch()">← 返回批量列表(${esc(batchJobs[i].kw)})</a>`;
+  $('result').prepend(back);
+  window.scrollTo(0, 0);
+}
+
+/* 总表→摘要锚点跳转(平滑滚动) */
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#abs_"]');
+  if (!a) return;
+  const el = document.querySelector(a.getAttribute('href'));
+  if (el) { e.preventDefault(); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+});
+
+$('cnki_kw').addEventListener('keydown', e => { if (e.key === 'Enter') doCnki(); });
+</script>
+</body>
+</html>
