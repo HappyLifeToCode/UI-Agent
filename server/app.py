@@ -138,6 +138,89 @@ def search(req: SearchRequest):
     return {"task_id": task["task_id"], "cached": False}
 
 
+class CnkiRequest(BaseModel):
+    """CNKI 关键词采集(药企横向链路,与 GS 学者链路独立)。"""
+    keyword: str
+    limit: int = 20
+    # 模型配置同 /api/search(KIMI_MODEL_* 通道)
+    model_name: str = ""
+    api_key: str = ""
+    provider_type: str = ""
+    base_url: str = ""
+    max_context_size: int = 0
+
+
+def _cnki_tid(keyword: str) -> str:
+    """清洗关键词并生成任务 id(与 run_cnki_tasks.task_id_of 同规则,
+    但额外把空白/特殊字符替换掉,防止路径问题)。"""
+    kw = re.sub(r"[^\w一-鿿-]+", "_", keyword.strip())
+    return f"cnki_{kw}"
+
+
+@app.post("/api/cnki_search")
+def cnki_search(req: CnkiRequest):
+    kw = req.keyword.strip()
+    if not kw:
+        raise HTTPException(400, "keyword 不能为空")
+    limit = req.limit or 20
+    if not (1 <= limit <= 100):
+        raise HTTPException(400, "limit 需在 1~100 之间")
+
+    import run_cnki_tasks
+    tid = _cnki_tid(kw)
+    task_dir = DATA_DIR / tid
+    if (task_dir / "papers.json").exists() and \
+            run_cnki_tasks.fragments_collected(task_dir) >= limit:
+        return {"task_id": tid, "cached": True}
+
+    model_cfg = None
+    if req.model_name.strip():
+        if not req.api_key.strip():
+            raise HTTPException(400, "指定了模型就必须提供 api_key")
+        model_cfg = {
+            "model_name": req.model_name.strip(),
+            "api_key": req.api_key.strip(),
+            "provider_type": req.provider_type.strip(),
+            "base_url": req.base_url.strip(),
+            "max_context_size": req.max_context_size,
+        }
+
+    task = {"keyword": kw, "limit": limit, "task_id": tid}
+    with _jobs_lock:
+        _jobs[tid] = {"state": "queued", "detail": "排队中",
+                      "task": task, "model_cfg": model_cfg, "kind": "cnki"}
+    _job_queue.put(task)
+    return {"task_id": tid, "cached": False}
+
+
+@app.get("/api/cnki_result/{keyword}")
+def cnki_result(keyword: str):
+    tid = _cnki_tid(keyword)
+    pj = DATA_DIR / tid / "papers.json"
+    if not pj.exists():
+        raise HTTPException(404, "结果不存在（任务可能未完成）")
+    return json.loads(pj.read_text(encoding="utf-8"))
+
+
+@app.get("/api/cnki_word/{keyword}")
+def cnki_word(keyword: str):
+    """生成并下载 CNKI 汇总 Word（总表内部链接 + 摘要全文附录）。"""
+    import export_cnki_word
+    tid = _cnki_tid(keyword)
+    task_dir = DATA_DIR / tid
+    if not (task_dir / "papers.json").exists():
+        raise HTTPException(404, "缺少 papers.json")
+    try:
+        out = export_cnki_word.generate_report(task_dir)
+    except Exception as e:
+        raise HTTPException(500, f"生成 Word 失败: {e}")
+    if not out or not Path(out).exists():
+        raise HTTPException(500, "Word 生成失败")
+    return FileResponse(
+        str(out), filename=Path(out).name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
 @app.get("/api/status/{task_id}")
 def status(task_id: str):
     with _jobs_lock:
@@ -145,7 +228,10 @@ def status(task_id: str):
     if job:
         return {"task_id": task_id, "state": job["state"], "detail": job["detail"]}
     # 缓存命中的任务不在 _jobs 里，直接看磁盘
-    if (DATA_DIR / task_id / "result.json").exists():
+    if task_id.startswith("cnki_"):
+        if (DATA_DIR / task_id / "papers.json").exists():
+            return {"task_id": task_id, "state": "done", "detail": "已有结果"}
+    elif (DATA_DIR / task_id / "result.json").exists():
         return {"task_id": task_id, "state": "done", "detail": "已有结果"}
     raise HTTPException(404, "未知任务")
 
@@ -446,6 +532,16 @@ def _restore_model_env(saved: dict):
             os.environ[k] = v
 
 
+def _cnki_reporter(tid: str, task_dir: Path, stop: threading.Event):
+    """CNKI 任务进度：日志摘要 + 已沉淀 fragment 数(逐篇即写,数字实时增长)。"""
+    import run_cnki_tasks
+    while not stop.wait(3):
+        tail = _log_tail(tid)
+        n = run_cnki_tasks.fragments_collected(task_dir)
+        _set_job(tid, "running",
+                 f"采集中（已沉淀 {n} 篇）{('｜' + tail) if tail else ''}")
+
+
 def _worker():
     while True:
         task = _job_queue.get()
@@ -454,23 +550,40 @@ def _worker():
             _set_job(tid, "failed", "检测到有批处理执行器在运行，请稍后再试")
             continue
         with _jobs_lock:
-            model_cfg = _jobs.get(tid, {}).get("model_cfg")
+            job = _jobs.get(tid, {})
+        model_cfg = job.get("model_cfg")
+        is_cnki = job.get("kind") == "cnki" or task.get("keyword")
         saved_env = None
         saved_model = run_tasks.MODEL
         stop = threading.Event()
-        reporter = threading.Thread(target=_progress_reporter, args=(tid, stop), daemon=True)
+        reporter_args = (tid, stop) if not is_cnki else (tid, DATA_DIR / tid, stop)
+        reporter_target = _progress_reporter if not is_cnki else _cnki_reporter
+        reporter = threading.Thread(target=reporter_target, args=reporter_args, daemon=True)
         try:
             if model_cfg:
                 saved_env = _apply_model_env(model_cfg)
                 run_tasks.MODEL = model_cfg["model_name"]  # mapping/_run 的模型标签
-            _set_job(tid, "running", "采集中（完整链路约 20-40 分钟）")
-            reporter.start()
-            record = run_tasks.run_one_task(task)
-            if record.get("status") == "success":
-                _set_job(tid, "done", "完成")
+            if is_cnki:
+                import run_cnki_tasks
+                _set_job(tid, "running", "采集中")
+                reporter.start()
+                ok = run_cnki_tasks.run_one(task, timeout=run_cnki_tasks.DEFAULT_TIMEOUT,
+                                            delay=False)
+                _set_job(tid, "done" if ok else "failed",
+                         "完成" if ok else "采集未完全成功（可重试补齐缺失篇目）")
             else:
-                reason = record.get("failure_reason") or record.get("status") or "未知原因"
-                _set_job(tid, "failed", f"任务未成功：{reason}")
+                _set_job(tid, "running", "采集中（完整链路约 20-40 分钟）")
+                reporter.start()
+                record = run_tasks.run_one_task(task)
+                if record.get("status") == "success":
+                    try:
+                        info = _build_replay_chain(tid)
+                        _set_job(tid, "done", f"完成，回放已生成（{info['steps']} 步）")
+                    except Exception as e:  # 回放生成失败不影响采集结果本身
+                        _set_job(tid, "done", f"完成（回放生成失败：{e}，可在结果页手动点「生成回放」）")
+                else:
+                    reason = record.get("failure_reason") or record.get("status") or "未知原因"
+                    _set_job(tid, "failed", f"任务未成功：{reason}")
         except Exception as e:  # worker 不能死
             _set_job(tid, "failed", f"执行器异常：{e}")
         finally:
