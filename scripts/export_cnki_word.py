@@ -25,7 +25,7 @@ from pathlib import Path
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -126,7 +126,11 @@ def generate_report(task_dir: Path) -> Path | None:
     # ---- 二、摘要全文（每篇标题为书签锚点） ----
     doc.add_heading("二、摘要全文", level=1)
     for p in papers:
-        h = doc.add_heading(f"#{p.get('rank')}  {p.get('title') or '(无标题)'}", level=2)
+        # 交付物是 Word 不是 markdown：标题不带 # 前缀，黑色、三号(16pt)
+        h = doc.add_heading(f"{p.get('rank')}. {p.get('title') or '(无标题)'}", level=2)
+        for r in h.runs:
+            r.font.color.rgb = RGBColor(0, 0, 0)
+            r.font.size = Pt(16)
         _add_bookmark(h, f"abs_{p['rank']:02d}", int(p.get("rank") or 0))
         doc.add_paragraph(f"{p.get('authors') or '-'}｜{p.get('source') or '-'}｜{p.get('date') or '-'}")
         doc.add_paragraph(p.get("abstract") or "（知网未提供摘要）")
