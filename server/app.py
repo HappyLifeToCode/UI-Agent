@@ -231,6 +231,13 @@ def status(task_id: str):
     if task_id.startswith("cnki_"):
         if (DATA_DIR / task_id / "papers.json").exists():
             return {"task_id": task_id, "state": "done", "detail": "已有结果"}
+        papers_dir = DATA_DIR / task_id / "papers"
+        if papers_dir.exists() and any(papers_dir.glob("paper_*.json")):
+            # 服务重启导致内存队列丢失,但磁盘有未完成 fragment:
+            # 重新提交同一关键词即断点续采(run_cnki_tasks 自动跳过已采篇)
+            n = len(list(papers_dir.glob("paper_*.json")))
+            return {"task_id": task_id, "state": "unknown",
+                    "detail": f"服务重启后状态丢失(已沉淀 {n} 篇);重新提交该关键词即断点续采"}
     elif (DATA_DIR / task_id / "result.json").exists():
         return {"task_id": task_id, "state": "done", "detail": "已有结果"}
     raise HTTPException(404, "未知任务")
