@@ -62,6 +62,10 @@
       Phase 1，Phase 2 逐批只补缺失的 fragment（中途 Ctrl+C / 断网后重跑
       同一任务即可从断点继续）；--status <task_id> 可先查看完成状态。
       缺篇时 checks/ 不再自动清理，保留待续跑（全部就位才清）。
+    - 数据更新：加 --update 对已完成的任务刷新数据 —— phase1 重采最新
+      清单与被引并重新排序；已核查（matched）的论文按标题沿用旧数据
+      （旧版留底 result_prev.json），Phase 2 只核查新增论文，旧的
+      not_found 篇目趁机重查；phase1 失败时自动恢复旧 result.json。
     - 同一时刻只允许一个执行器实例（data/.runner.lock），防止并发跑批把
       同一 IP 打到谷歌学术限流、以及 session 归属错乱。
 
@@ -619,6 +623,11 @@ def rank_papers(papers: list) -> list:
     return ranked
 
 
+def _norm_title(t: str) -> str:
+    """标题归一化（更新模式按标题匹配旧核查数据）：去标点空白、小写。"""
+    return re.sub(r"[\W_]+", "", (t or "").lower())
+
+
 def fragments_missing(task_dir: Path, batch: list) -> list:
     """本批中还没有 fragment（checks/paper_NN.json）的论文。"""
     checks = task_dir / "checks"
@@ -771,12 +780,18 @@ def show_task_state(task_id: str):
             print("  建议    : 已完成，无需续跑（要更新数据请直接全新重跑）")
 
 
-def run_one_task(task: dict, dry_run: bool = False, resume: bool = False) -> dict:
+def run_one_task(task: dict, dry_run: bool = False, resume: bool = False,
+                 update: bool = False) -> dict:
     """执行单个任务（三段式管线；--template 指定旧模板时走 legacy 单会话），返回执行记录。
 
     resume=True（--resume）断点续跑：phase1.json 已成功则跳过 Phase 1、
     不清理旧产出，Phase 2 只补缺失的 fragment；phase1 不可用则自动
     退化为全新任务（先清理再跑）。
+
+    update=True（--update）数据更新：备份旧 result.json 与截图后 phase1
+    照常重采最新清单（被引/排序随之刷新），旧核查数据按标题映射到新 rank
+    合成 fragment（截图改名复用），Phase 2 只核查新增论文；旧的 not_found
+    篇目趁机重查。不与 --resume 同用（resume 优先）。
     """
     task_id = task["task_id"]
     task_dir = PROJECT_ROOT / "data" / task_id
@@ -801,6 +816,23 @@ def run_one_task(task: dict, dry_run: bool = False, resume: bool = False) -> dic
 
     # 1. 保存任务定义副本
     (task_dir / "task.json").write_text(json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 1.5 更新模式（--update）：备份旧结果与截图；phase1 重采后把旧核查数据
+    #     按标题映射到新 rank（见 Phase 1 成功后的合成逻辑）
+    update_active = False
+    old_by_title = {}
+    if update and not resume:
+        old_result = _read_json(task_dir / "result.json")
+        if old_result and old_result.get("recent_papers"):
+            update_active = True
+            shutil.copy(task_dir / "result.json", task_dir / "result_prev.json")
+            shutil.move(str(task_dir / "screenshots"),
+                        str(task_dir / "screenshots_prev"))
+            old_by_title = {_norm_title(p.get("title")): p
+                            for p in old_result["recent_papers"] if p.get("title")}
+            print(f"[更新] 已备份旧结果（{len(old_by_title)} 篇），Phase 1 重采最新清单")
+        else:
+            print("[更新] 无旧 result.json 可用，按全新任务执行")
 
     # 2. 清理旧产出 [M5]；--resume 且 phase1 已成功则保留进度跳过 Phase 1
     resume_active = False
@@ -856,23 +888,30 @@ def run_one_task(task: dict, dry_run: bool = False, resume: bool = False) -> dic
         # phase1 失败（captcha/not_found/没写文件）：写最小 result.json 保持下游语义，
         # 不进 phase2。main 的 captcha/429 重试逻辑照旧作用于 record["status"]。
         if p1_status != "success":
-            result = {k: (phase1 or {}).get(k) for k in
-                      ("task_id", "person_name", "affiliation", "interests",
-                       "total_citations", "h_index", "i10_index", "top_papers", "profile_url")}
-            result["task_id"] = task_id
-            result["status"] = p1_status
-            result["note"] = (phase1 or {}).get("note") or (
-                None if phase1 is not None else "Agent 未写入 phase1.json")
-            (task_dir / "result.json").write_text(
-                json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            if update_active:
+                # 更新失败不动旧数据：恢复旧 result.json，本次失败只体现在台账与 phase1
+                (task_dir / "result_prev.json").replace(task_dir / "result.json")
+                print("[更新] phase1 失败，已恢复旧 result.json（数据未被破坏）")
+            else:
+                result = {k: (phase1 or {}).get(k) for k in
+                          ("task_id", "person_name", "affiliation", "interests",
+                           "total_citations", "h_index", "i10_index", "top_papers", "profile_url")}
+                result["task_id"] = task_id
+                result["status"] = p1_status
+                result["note"] = (phase1 or {}).get("note") or (
+                    None if phase1 is not None else "Agent 未写入 phase1.json")
+                (task_dir / "result.json").write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             (task_dir / "wire.jsonl").write_text(old_wire + "".join(wire_frags), encoding="utf-8")
             annotate_run_info(task_dir, session_id, t0, t1, batch_session_ids=[])
+            # 更新模式恢复了旧 result.json（读出来是 success），台账要记本次真实状态
+            run_status = p1_status if update_active else read_status(task_dir)
             record = build_record(
                 task=task, session_id=session_id, start_time=start_time, end_time=t1,
-                returncode=returncode, status=read_status(task_dir),
+                returncode=returncode, status=run_status,
                 has_result=True, has_screenshot=has_screenshot, has_trace=has_trace,
                 trajectory_collected=bool(wire_frags[0]),
-                failure_reason=derive_failure_reason(task_dir, read_status(task_dir), returncode))
+                failure_reason=derive_failure_reason(task_dir, run_status, returncode))
             append_mapping(record)
             print(f"[完成] phase1 状态: {p1_status} | 未进入核查阶段")
             return record
@@ -885,14 +924,49 @@ def run_one_task(task: dict, dry_run: bool = False, resume: bool = False) -> dic
     batches = [ranked[i:i + BATCH_SIZE] for i in range(0, len(ranked), BATCH_SIZE)]
     print(f"[phase1] 近五年论文 {len(ranked)} 篇，分 {len(batches)} 批核查（每批 ≤{BATCH_SIZE} 篇）")
 
+    # ---- 更新模式：旧核查数据按标题映射到新 rank 合成 fragment，Phase 2 只查新增 ----
+    if update_active:
+        carried = 0
+        checks_dir = task_dir / "checks"
+        checks_dir.mkdir(exist_ok=True)
+        (task_dir / "screenshots").mkdir(exist_ok=True)
+        for p in ranked:
+            old = old_by_title.get(_norm_title(p["title"]))
+            if not old or old.get("match_status") != "matched":
+                continue  # 新增论文、旧未核查到的篇目一律重新核查
+            shot_name = None
+            old_rank = old.get("rank")
+            if old_rank is not None:
+                old_shot = (task_dir / "screenshots_prev"
+                            / f"{task_id}_paper_{old_rank:02d}.png")
+                if old_shot.exists():
+                    shot_name = f"{task_id}_paper_{p['rank']:02d}.png"
+                    shutil.copy(old_shot, task_dir / "screenshots" / shot_name)
+            frag = {k: old.get(k) for k in
+                    ("match_status", "s2_id", "s2_url", "s2_citations",
+                     "openalex_id", "openalex_url", "openalex_citations",
+                     "doi", "journal", "abstract")}
+            frag.update({
+                "rank": p["rank"], "title": p["title"], "year": p.get("year"),
+                "gs_citations": p.get("gs_citations"),  # 最新被引
+                "screenshot": shot_name,
+                "note": ((old["note"] + "；" if old.get("note") else "")
+                         + "沿用上次核查结果（更新模式未重查）"),
+            })
+            (checks_dir / f"paper_{p['rank']:02d}.json").write_text(
+                json.dumps(frag, ensure_ascii=False, indent=2), encoding="utf-8")
+            carried += 1
+        shutil.rmtree(task_dir / "screenshots_prev", ignore_errors=True)
+        print(f"[更新] 沿用旧核查 {carried} 篇，本次只需核查新增 {len(ranked) - carried} 篇")
+
     batch_session_ids = []
     returncode_2 = 0
     end_time = t1
     try:
         for bi, batch in enumerate(batches, start=1):
             print(f"[批次{bi}/{len(batches)}] rank {batch[0]['rank']}~{batch[-1]['rank']}")
-            if resume_active and not fragments_missing(task_dir, batch):
-                print(f"[批次{bi}] fragment 已全部就位，续跑跳过")
+            if (resume_active or update_active) and not fragments_missing(task_dir, batch):
+                print(f"[批次{bi}] fragment 已全部就位（续跑/更新沿用），跳过")
                 continue
             for attempt in (1, 2):
                 # 每次起会话前按当前磁盘状态补缺：首轮=全批，重试/续跑=只缺的部分
@@ -1086,6 +1160,10 @@ def main():
                              "Phase 2 只补缺失的 fragment（默认全新重跑并清理旧产出）")
     parser.add_argument("--status", metavar="TASK_ID",
                         help="只查看该任务在磁盘上的完成状态（phase1/fragment/result），不执行")
+    parser.add_argument("--update", action="store_true",
+                        help="数据更新：phase1 重采最新清单与被引（重新排序），"
+                             "已核查过的论文沿用旧数据不重复核查，Phase 2 只查新增；"
+                             "phase1 失败自动恢复旧 result.json（不与 --resume 同用）")
     parser.add_argument("--model", help="指定模型（覆盖环境变量 AGENT_MODEL 和默认值）")
     parser.add_argument("--template",
                         help="【legacy 单会话模式】旧版 prompt 模板文件名"
@@ -1177,7 +1255,7 @@ def main():
 
         for i, task in enumerate(tasks_to_run):
             # 执行任务 [M8]
-            record = run_one_task(task, resume=args.resume)
+            record = run_one_task(task, resume=args.resume, update=args.update)
 
             # 429 限流重试：CLI 因限流中止（日志含 429 / RateLimit，
             # 常见于小模型 compaction 请求被限流）时，冷却 2-5 分钟后重跑。
@@ -1191,7 +1269,7 @@ def main():
                 print(f"[429] 检测到 API 限流导致会话中止，冷却 {delay/60:.0f} 分钟后重试 "
                       f"({retry_429}/{args.max_429_retry})...")
                 time.sleep(delay)
-                record = run_one_task(task, resume=args.resume)
+                record = run_one_task(task, resume=args.resume, update=args.update)
 
             # 统计结果
             if record["status"] == "success":
@@ -1208,7 +1286,7 @@ def main():
                     print(f"[CAPTCHA] 检测到验证码，冷却 {delay/60:.0f} 分钟后重试 ({retry}/{args.max_captcha_retry})...")
                     time.sleep(delay)
 
-                    record = run_one_task(task, resume=args.resume)
+                    record = run_one_task(task, resume=args.resume, update=args.update)
                     if record["status"] != "captcha":
                         break
 
