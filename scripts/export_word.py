@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 from docx import Document
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
@@ -55,6 +56,47 @@ def _set_style_font(style, ascii_font: str, eastasia_font: str, size=None):
     rfonts.set(qn("w:eastAsia"), eastasia_font)
     if size is not None:
         style.font.size = size
+
+
+def _add_bookmark(paragraph, name: str, bid: int):
+    """给段落加书签（内部跳转锚点），供 w:hyperlink w:anchor 引用。"""
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bid))
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bid))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def _add_internal_link(paragraph, text: str, anchor: str):
+    """在段落里追加一个指向文档内书签的超链接（蓝色下划线样式）。"""
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("w:anchor"), anchor)
+    run = OxmlElement("w:r")
+    rpr = OxmlElement("w:rPr")
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:ascii"), BODY_ASCII_FONT)
+    rfonts.set(qn("w:hAnsi"), BODY_ASCII_FONT)
+    rfonts.set(qn("w:eastAsia"), BODY_EASTASIA_FONT)
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0563C1")
+    u = OxmlElement("w:u")
+    u.set(qn("w:val"), "single")
+    rpr.append(rfonts)
+    rpr.append(color)
+    rpr.append(u)
+    run.append(rpr)
+    t = OxmlElement("w:t")
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+
+def _detail_anchor(year: str, year_rank: int) -> str:
+    """总表行与逐篇详情小节共用的锚点名（书签 id 需唯一，用行号兜底）。"""
+    return f"detail_{year}_{year_rank}"
 
 
 def _ext_fields(paper: dict):
@@ -128,8 +170,11 @@ def _add_summary_table(doc, papers):
             run.font.size = Pt(12)
         year_rank += 1
         cells = table.add_row().cells
-        cells[0].text = str(year_rank)
-        cells[1].text = p.get("title") or "(无标题)"
+        anchor = _detail_anchor(year, year_rank)
+        cells[0].text = ""
+        _add_internal_link(cells[0].paragraphs[0], str(year_rank), anchor)
+        cells[1].text = ""
+        _add_internal_link(cells[1].paragraphs[0], p.get("title") or "(无标题)", anchor)
         cells[2].text = str(p.get("gs_citations") if p.get("gs_citations") is not None else "-")
         cells[3].text = str(p.get("match_status") or "-")
     return table
@@ -181,6 +226,7 @@ def generate_report(task_dir: Path) -> Path | None:
 
     current_year = None
     year_rank = 0  # 年内序号（从 1 开始，年内按 GS 被引降序；全局被引排名见详情表）
+    bookmark_id = 0  # 书签 id（文档内唯一即可）
     for p in papers:
         year = str(p.get("year") or "未知年份")
         if year != current_year:
@@ -190,7 +236,10 @@ def generate_report(task_dir: Path) -> Path | None:
         year_rank += 1
 
         src_name, src_url, src_cites = _ext_fields(p)
-        doc.add_heading(f"#{year_rank}  {p.get('title') or '(无标题)'}", level=3)
+        h = doc.add_heading(f"#{year_rank}  {p.get('title') or '(无标题)'}", level=3)
+        # 书签锚点供总表"序号/标题"超链接跳转（与 _add_summary_table 的锚点同名）
+        bookmark_id += 1
+        _add_bookmark(h, _detail_anchor(year, year_rank), bookmark_id)
         _add_kv_table(doc, [
             ("年内序号", year_rank),
             ("全局被引排名", p.get("rank")),
